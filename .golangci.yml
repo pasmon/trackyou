@@ -22,10 +22,15 @@ linters:
 run:
   deadline: 5m
   tests: true
-  skip-dirs:
-    - vendor/
   skip-packages:
     - github.com/go-gl/gl/v2.1/gl
+    - github.com/go-gl/glfw/v3.3/glfw
+    - fyne.io/fyne/v2
+    - fyne.io/fyne/v2/app
+    - fyne.io/fyne/v2/container
+    - fyne.io/fyne/v2/dialog
+    - fyne.io/fyne/v2/theme
+    - fyne.io/fyne/v2/widget
 
 issues:
   exclude-dirs:
