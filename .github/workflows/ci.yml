@@ -62,14 +62,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libx11-dev xorg-dev libxtst-dev libpng++-dev
           
+      - name: Install fyne-cross
+        run: |
+          go install github.com/fyne-io/fyne-cross@latest
+          
       - name: Build for Linux
         run: GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -o trackyou-linux-amd64
       - name: Build for Windows
-        run: |
-          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 FYNE_CROSSCOMPILE=1 go build -o trackyou-windows-amd64.exe
+        run: fyne-cross windows -arch=amd64 -output=trackyou-windows-amd64.exe
       - name: Build for macOS
-        run: |
-          GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 FYNE_CROSSCOMPILE=1 go build -o trackyou-darwin-amd64
+        run: fyne-cross darwin -arch=amd64 -output=trackyou-darwin-amd64
       
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
