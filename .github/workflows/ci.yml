@@ -23,6 +23,9 @@ jobs:
         with:
           version: latest
           args: --timeout=5m --out-format=colored-line-number
+          working-directory: .
+          skip-pkg-cache: true
+          skip-build-cache: true
 
   test:
     name: Test
@@ -36,10 +39,9 @@ jobs:
           go-version: '1.21'
           
       - name: Run tests
-        run: |
-          go test -v ./database/... ./models/...
+        run: go test -v ./...
         env:
-          FYNE_TEST_SKIP_GUI: 1
+          CGO_ENABLED: 0
 
   build:
     name: Build
@@ -54,24 +56,14 @@ jobs:
           go-version: '1.21'
           
       - name: Build for Linux
-        run: go build -o trackyou-linux ./cmd/trackyou
+        run: GOOS=linux GOARCH=amd64 go build -o trackyou-linux-amd64
       - name: Build for Windows
-        run: GOOS=windows GOARCH=amd64 go build -o trackyou.exe ./cmd/trackyou
+        run: GOOS=windows GOARCH=amd64 go build -o trackyou-windows-amd64.exe
       - name: Build for macOS
-        run: GOOS=darwin GOARCH=amd64 go build -o trackyou-macos ./cmd/trackyou
+        run: GOOS=darwin GOARCH=amd64 go build -o trackyou-darwin-amd64
       
-      - name: Upload Linux build
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: trackyou-linux
-          path: trackyou-linux
-      - name: Upload Windows build
-        uses: actions/upload-artifact@v4
-        with:
-          name: trackyou-windows
-          path: trackyou.exe
-      - name: Upload macOS build
-        uses: actions/upload-artifact@v4
-        with:
-          name: trackyou-macos
-          path: trackyou-macos 
+          name: binaries
+          path: trackyou-* 
