@@ -1,0 +1,21 @@
+# Binary files
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS specific files
+.DS_Store
+Thumbs.db 
