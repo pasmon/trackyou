@@ -13,7 +13,7 @@ linters:
     - gocritic
     - goconst
     - gocognit
-    - gomnd
+    - mnd
     - gomoddirectives
     - gomodguard
     - goprintffuncname
@@ -24,24 +24,34 @@ run:
   tests: true
   skip-dirs:
     - vendor/
+  skip-packages:
+    - github.com/go-gl/gl/v2.1/gl
 
 issues:
+  exclude-dirs:
+    - vendor/
   exclude-rules:
     - path: _test\.go
       linters:
         - gocyclo
         - gosec
-        - gomnd
+        - mnd
+    - path: .*\.go
+      linters:
+        - gosec
+      text: "G404: Use of weak random number generator"
+      source: "math/rand"
 
 output:
-  format: colored-line-number
+  formats:
+    - colored-line-number
   print-issued-lines: true
   print-linter-name: true
 
 linters-settings:
   gocyclo:
     min-complexity: 15
-  gomnd:
+  mnd:
     settings:
       mnd:
         checks: assignment,argument,return

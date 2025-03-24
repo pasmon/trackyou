@@ -37,22 +37,13 @@ jobs:
           
       - name: Run tests
         run: go test -v ./...
+        env:
+          FYNE_TEST_SKIP_GUI: 1
 
   build:
     name: Build
     needs: [lint, test]
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        include:
-          - os: ubuntu-latest
-            artifact_name: trackyou-linux
-          - os: windows-latest
-            artifact_name: trackyou-windows.exe
-          - os: macos-latest
-            artifact_name: trackyou-macos
-
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       
@@ -61,11 +52,25 @@ jobs:
         with:
           go-version: '1.21'
           
-      - name: Build
-        run: go build -o ${{ matrix.artifact_name }}
-        
-      - name: Upload artifact
+      - name: Build for Linux
+        run: go build -o trackyou-linux ./cmd/trackyou
+      - name: Build for Windows
+        run: GOOS=windows GOARCH=amd64 go build -o trackyou.exe ./cmd/trackyou
+      - name: Build for macOS
+        run: GOOS=darwin GOARCH=amd64 go build -o trackyou-macos ./cmd/trackyou
+      
+      - name: Upload Linux build
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.artifact_name }} 
+          name: trackyou-linux
+          path: trackyou-linux
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: trackyou-windows
+          path: trackyou.exe
+      - name: Upload macOS build
+        uses: actions/upload-artifact@v4
+        with:
+          name: trackyou-macos
+          path: trackyou-macos 
