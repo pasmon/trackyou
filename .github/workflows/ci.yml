@@ -22,10 +22,12 @@ jobs:
         uses: golangci/golangci-lint-action@v4
         with:
           version: latest
-          args: --timeout=5m --out-format=colored-line-number
+          args: --timeout=5m
           working-directory: .
           skip-pkg-cache: true
           skip-build-cache: true
+        env:
+          CGO_ENABLED: 0
 
   test:
     name: Test
