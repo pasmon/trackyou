@@ -69,9 +69,9 @@ jobs:
       - name: Build for Linux
         run: GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -o trackyou-linux-amd64
       - name: Build for Windows
-        run: fyne-cross windows -arch=amd64 -output=trackyou-windows-amd64.exe
+        run: fyne-cross windows -arch=amd64 -output=trackyou-windows-amd64.exe -app-id=com.trackyou.app
       - name: Build for macOS
-        run: fyne-cross darwin -arch=amd64 -output=trackyou-darwin-amd64
+        run: fyne-cross darwin -arch=amd64 -output=trackyou-darwin-amd64 -app-id=com.trackyou.app
       
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
