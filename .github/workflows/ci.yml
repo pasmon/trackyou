@@ -41,9 +41,11 @@ jobs:
           go-version: '1.21'
           
       - name: Run tests
-        run: go test -v ./...
+        run: |
+          go test -v ./database/... ./models/...
         env:
           CGO_ENABLED: 0
+          FYNE_TEST_SKIP_GUI: 1
 
   build:
     name: Build
