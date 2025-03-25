@@ -76,7 +76,11 @@ jobs:
           wget -q https://github.com/joseluisq/macosx-sdks/releases/download/12.3/MacOSX12.3.sdk.tar.xz
           tar -xf MacOSX12.3.sdk.tar.xz -C ${{ github.workspace }}/macos-sdk
       - name: Build for macOS
-        run: fyne-cross darwin -arch=amd64 -output=trackyou-darwin-amd64 -app-id=com.trackyou.app -macosx-sdk-path=${{ github.workspace }}/macos-sdk/MacOSX12.3.sdk
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/app -v ${{ github.workspace }}/macos-sdk:/sdk \
+            -w /app \
+            fyneio/fyne-cross-images:darwin \
+            fyne-cross darwin -arch=amd64 -output=trackyou-darwin-amd64 -app-id=com.trackyou.app
       
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
