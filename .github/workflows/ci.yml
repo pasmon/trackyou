@@ -78,7 +78,7 @@ jobs:
       - name: Build for macOS
         run: fyne-cross darwin -arch=amd64 -output=trackyou-darwin-amd64 -app-id=com.trackyou.app
         env:
-          MACOS_SDK_PATH: /tmp/macos-sdk/MacOSX12.3.sdk
+          FYNE_CROSS_MACOS_SDK: /tmp/macos-sdk/MacOSX12.3.sdk
       
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
