@@ -72,13 +72,11 @@ jobs:
         run: fyne-cross windows -arch=amd64 -output=trackyou-windows-amd64.exe -app-id=com.trackyou.app
       - name: Download macOS SDK
         run: |
-          mkdir -p /tmp/macos-sdk
+          mkdir -p ${{ github.workspace }}/macos-sdk
           wget -q https://github.com/joseluisq/macosx-sdks/releases/download/12.3/MacOSX12.3.sdk.tar.xz
-          tar -xf MacOSX12.3.sdk.tar.xz -C /tmp/macos-sdk
+          tar -xf MacOSX12.3.sdk.tar.xz -C ${{ github.workspace }}/macos-sdk
       - name: Build for macOS
-        run: fyne-cross darwin -arch=amd64 -output=trackyou-darwin-amd64 -app-id=com.trackyou.app
-        env:
-          FYNE_CROSS_MACOS_SDK: /tmp/macos-sdk/MacOSX12.3.sdk
+        run: fyne-cross darwin -arch=amd64 -output=trackyou-darwin-amd64 -app-id=com.trackyou.app -macosx-sdk-path=${{ github.workspace }}/macos-sdk/MacOSX12.3.sdk
       
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
