@@ -70,13 +70,6 @@ jobs:
         run: GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -o trackyou-linux-amd64
       - name: Build for Windows
         run: fyne-cross windows -arch=amd64 -output=trackyou-windows-amd64.exe -app-id=com.trackyou.app
-      - name: Download and extract macOS SDK
-        run: |
-          mkdir -p ${{ github.workspace }}/sdk
-          wget -q https://dl.apple.com/CommandLineTools/Command_Line_Tools_for_Xcode_12.5.1.dmg -O xcode-cli.dmg
-          fyne-cross darwin-sdk-extract --xcode-path xcode-cli.dmg
-      - name: Build for macOS
-        run: fyne-cross darwin -arch=amd64 -output=trackyou-darwin-amd64 -app-id=com.trackyou.app -macosx-sdk-path=${{ github.workspace }}/SDKs/MacOSX11.3.sdk
       
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
