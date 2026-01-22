@@ -36,11 +36,16 @@ jobs:
         with:
           go-version: '1.21'
           
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev xorg-dev libxtst-dev libpng++-dev
+          
       - name: Run tests
         run: |
-          go test -v ./database/... ./models/...
+          go test -v ./...
         env:
-          CGO_ENABLED: 0
+          CGO_ENABLED: 1
           FYNE_TEST_SKIP_GUI: 1
 
   build:

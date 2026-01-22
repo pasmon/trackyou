@@ -26,8 +26,8 @@ The project follows a simple structure:
 *   **Install Dependencies:** `go mod download`
 *   **Run Locally:** `go run main.go`
 *   **Build:** `go build -o trackyou`
-*   **Test:** `go test -v ./database/... ./models/...`
-    *   *Note:* CI sets `CGO_ENABLED=0` and `FYNE_TEST_SKIP_GUI=1` for tests, but local tests might need CGO depending on what's being tested.
+*   **Test:** `go test -v ./...`
+    *   *Note:* CI sets `CGO_ENABLED=1` (required for SQLite) and `FYNE_TEST_SKIP_GUI=1` for tests.
 
 ## Development Conventions
 
