@@ -6,17 +6,45 @@ before:
     - go mod tidy
 
 builds:
-  - env:
-      - CGO_ENABLED=1
+  - id: linux
     goos:
       - linux
-      - windows
     goarch:
       - amd64
       - arm64
-    ignore:
-      - goos: windows
-        goarch: arm64
+    env:
+      - CGO_ENABLED=1
+      - CC=x86_64-linux-musl-gcc
+      - CXX=x86_64-linux-musl-g++
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.CommitDate}}
+      
+  - id: windows
+    goos:
+      - windows
+    goarch:
+      - amd64
+    env:
+      - CGO_ENABLED=1
+      - CC=x86_64-w64-mingw32-gcc
+      - CXX=x86_64-w64-mingw32-g++
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.CommitDate}}
+
+  - id: darwin
+    goos:
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=1
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
@@ -35,6 +63,19 @@ archives:
       - goos: windows
         formats: ['zip']
 
+brews:
+  - name: trackyou
+    repository:
+      owner: pasmon
+      name: homebrew-trackyou
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    url_template: "https://github.com/pasmon/trackyou/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
+    directory: Formula
+    homepage: "https://github.com/pasmon/trackyou"
+    description: "Time tracking app built with Fyne and Go."
+    install: |
+      bin.install "trackyou"
+
 checksum:
   name_template: 'checksums.txt'
   algorithm: sha256
@@ -51,4 +92,4 @@ changelog:
       - '^ci:'
       - '^chore:'
       - Merge pull request
-      - Merge branch 
+      - Merge branch
