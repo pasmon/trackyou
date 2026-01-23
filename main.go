@@ -2,18 +2,28 @@ package main
 
 import (
 	"fmt"
-	"sort"
+	"image/color"
+	"os"
 	"time"
 
 	"trackyou/database"
 	"trackyou/models"
+	"trackyou/ui"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+)
+
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
 )
 
 type App struct {
@@ -22,15 +32,22 @@ type App struct {
 	db          *database.DB
 	taskList    *widget.List
 	tasks       []*models.Task
+	taskGroups  []models.TaskGroup
 	currentTask *models.Task
-	timerLabel  *widget.Label
-	timerStop   chan struct{}
-	themeCheck  *widget.Check
+	
+	// UI Components
+	timerLabel       *widget.Label
+	timerStop        chan struct{}
+	projectEntry     *widget.Entry
+	descriptionEntry *widget.Entry
+	startButton      *widget.Button
+	stopButton       *widget.Button
+	recordingIcon    *canvas.Circle
+	recordingAnim    *fyne.Animation
 }
 
-type TaskGroup struct {
-	Date  time.Time
-	Tasks []*models.Task
+func (a *App) updateTaskGroups() {
+	a.taskGroups = models.GroupTasksByDate(a.tasks)
 }
 
 func (a *App) updateTimer() {
@@ -42,7 +59,7 @@ func (a *App) updateTimer() {
 		case <-ticker.C:
 			if a.currentTask != nil {
 				duration := time.Since(a.currentTask.StartTime)
-				a.timerLabel.SetText(fmt.Sprintf("Current Task Duration: %v", duration.Round(time.Second)))
+				a.timerLabel.SetText(fmt.Sprintf("%v", duration.Round(time.Second)))
 			}
 		case <-a.timerStop:
 			return
@@ -50,14 +67,22 @@ func (a *App) updateTimer() {
 	}
 }
 
+func (a *App) showDialogError(err error) {
+	if os.Getenv("FYNE_TEST_SKIP_GUI") != "" {
+		fmt.Printf("Error (skipped dialog): %v\n", err)
+		return
+	}
+	dialog.ShowError(err, a.window)
+}
+
 func (a *App) toggleTheme(isDark bool) {
 	if isDark {
-		a.app.Settings().SetTheme(theme.DarkTheme())
+		a.app.Settings().SetTheme(ui.NewMaterialTheme(theme.VariantDark))
 	} else {
-		a.app.Settings().SetTheme(theme.LightTheme())
+		a.app.Settings().SetTheme(ui.NewMaterialTheme(theme.VariantLight))
 	}
 	if err := a.db.SetTheme(themeName(isDark)); err != nil {
-		dialog.ShowError(err, a.window)
+		a.showDialogError(err)
 	}
 }
 
@@ -68,93 +93,302 @@ func themeName(isDark bool) string {
 	return "light"
 }
 
-func (a *App) groupTasksByDate() []TaskGroup {
-	// Create a map to group tasks by date
-	groups := make(map[string][]*models.Task)
-	for _, task := range a.tasks {
-		date := task.StartTime.Format("2006-01-02")
-		groups[date] = append(groups[date], task)
-	}
-
-	// Convert map to slice and sort by date
-	var taskGroups []TaskGroup
-	for dateStr, tasks := range groups {
-		date, _ := time.Parse("2006-01-02", dateStr)
-		// Sort tasks within each group by start time
-		sort.Slice(tasks, func(i, j int) bool {
-			return tasks[i].StartTime.After(tasks[j].StartTime)
-		})
-		taskGroups = append(taskGroups, TaskGroup{Date: date, Tasks: tasks})
-	}
-
-	// Sort groups by date (newest first)
-	sort.Slice(taskGroups, func(i, j int) bool {
-		return taskGroups[i].Date.After(taskGroups[j].Date)
-	})
-
-	return taskGroups
-}
-
-func (a *App) getTaskItem(id widget.ListItemID) (string, bool) {
-	groups := a.groupTasksByDate()
-	currentIndex := 0
-
-	for _, group := range groups {
-		// Add date header
-		if currentIndex == id {
-			// Calculate total duration for the day
-			var totalDuration time.Duration
-			for _, task := range group.Tasks {
-				totalDuration += task.Duration
-			}
-			return fmt.Sprintf("=== %s (Total: %v) ===",
-				group.Date.Format("Monday, January 2, 2006"),
-				totalDuration.Round(time.Second)), true
-		}
-		currentIndex++
-
-		// Add tasks
-		for _, task := range group.Tasks {
-			if currentIndex == id {
-				return fmt.Sprintf("  %s - %s (Duration: %v)",
-					task.ProjectName,
-					task.Description,
-					task.Duration.Round(time.Second)), false
-			}
-			currentIndex++
-		}
-	}
-
-	return "", false
+func (a *App) getTaskItem(id widget.ListItemID) (title, subtitle string, itemType models.ItemType) {
+	return models.GetTaskItemData(a.taskGroups, int(id))
 }
 
 func (a *App) getTaskCount() int {
-	groups := a.groupTasksByDate()
-	count := 0
-	for _, group := range groups {
-		count++ // Date header
-		count += len(group.Tasks)
+	return models.GetTotalItemCount(a.taskGroups)
+}
+
+func (a *App) getTask(id widget.ListItemID) *models.Task {
+	return models.GetTaskByListItemID(a.taskGroups, int(id))
+}
+
+func (a *App) startTask(projectName, description string) {
+	if a.currentTask != nil {
+		if os.Getenv("FYNE_TEST_SKIP_GUI") == "" {
+			dialog.ShowInformation("Error", "A task is already running", a.window)
+		}
+		return
 	}
-	return count
+
+	if projectName == "" {
+		a.showDialogError(fmt.Errorf("project name is required"))
+		return
+	}
+
+	a.currentTask = models.NewTask(projectName, description)
+	a.updateButtonsState(true)
+	a.timerLabel.SetText("Starting...")
+	
+	// Sync entries
+	a.projectEntry.SetText(projectName)
+	a.descriptionEntry.SetText(description)
+
+	// Start Animation
+	if a.recordingAnim != nil {
+		a.recordingAnim.Start()
+	}
+	if a.recordingIcon != nil {
+		a.recordingIcon.Show()
+	}
+
+	go a.updateTimer()
+}
+
+func (a *App) stopTask() {
+	if a.currentTask == nil {
+		return
+	}
+
+	a.currentTask.StopTask()
+	if err := a.db.SaveTask(a.currentTask); err != nil {
+		a.showDialogError(err)
+		return
+	}
+
+	// Prepend
+	a.tasks = append([]*models.Task{a.currentTask}, a.tasks...)
+	a.updateTaskGroups()
+	
+	a.currentTask = nil
+	a.updateButtonsState(false)
+	
+	if a.taskList != nil {
+		a.taskList.Refresh()
+	}
+	
+	select {
+	case a.timerStop <- struct{}{}:
+	default:
+	}
+	
+	if a.timerLabel != nil {
+		a.timerLabel.SetText("Ready")
+	}
+	
+	// Stop Animation
+	if a.recordingAnim != nil {
+		a.recordingAnim.Stop()
+	}
+	if a.recordingIcon != nil {
+		a.recordingIcon.Hide()
+	}
+}
+
+func (a *App) updateButtonsState(running bool) {
+	if a.startButton == nil || a.stopButton == nil || a.projectEntry == nil || a.descriptionEntry == nil {
+		return
+	}
+	if running {
+		a.startButton.Disable()
+		a.stopButton.Enable()
+		a.projectEntry.Disable()
+		a.descriptionEntry.Disable()
+	} else {
+		a.startButton.Enable()
+		a.stopButton.Disable()
+		a.projectEntry.Enable()
+		a.descriptionEntry.Enable()
+	}
+}
+
+func (a *App) continueTask(task *models.Task) {
+	a.startTask(task.ProjectName, task.Description)
+}
+
+func (a *App) makeUI() fyne.CanvasObject {
+	// Top Bar: Theme Toggle
+	themeCheck := widget.NewCheck("Dark Mode", func(checked bool) {
+		a.toggleTheme(checked)
+	})
+	// Initialize check state based on current theme
+	currentTheme, _ := a.db.GetTheme()
+	themeCheck.SetChecked(currentTheme == "dark")
+	
+	topBar := container.NewHBox(layout.NewSpacer(), themeCheck)
+
+	// Input Area
+	a.projectEntry = widget.NewEntry()
+	a.projectEntry.SetPlaceHolder("Project")
+	a.descriptionEntry = widget.NewEntry()
+	a.descriptionEntry.SetPlaceHolder("What are you working on?")
+
+	// Timer Area
+	a.timerLabel = widget.NewLabel("Ready")
+	a.timerLabel.TextStyle = fyne.TextStyle{Bold: true}
+	a.timerLabel.Alignment = fyne.TextAlignCenter
+	
+	// Recording Icon (Red Circle)
+	a.recordingIcon = canvas.NewCircle(color.RGBA{R: 255, G: 0, B: 0, A: 255})
+	a.recordingIcon.Resize(fyne.NewSize(12, 12))
+	a.recordingIcon.Hide()
+	
+	// Recording Animation (Pulse Opacity)
+	a.recordingAnim = fyne.NewAnimation(2*time.Second, func(p float32) {
+		// Pulse alpha from 0.2 to 1.0 and back
+		alpha := uint8(255 * (0.5 + 0.5*p)) // simplify: just fade in?
+		// Triangle wave
+		if p > 0.5 {
+			p = 1.0 - p
+		}
+		// p is 0 -> 0.5 -> 0
+		alpha = uint8(255 * (0.3 + 1.4*p)) // 0.3 to 1.0 approx
+		c := color.RGBA{R: 255, G: 0, B: 0, A: alpha}
+		a.recordingIcon.FillColor = c
+		a.recordingIcon.Refresh()
+	})
+	a.recordingAnim.RepeatCount = fyne.AnimationRepeatForever
+	a.recordingAnim.AutoReverse = false
+
+	timerContainer := container.NewHBox(
+		layout.NewSpacer(),
+		container.NewCenter(a.recordingIcon),
+		a.timerLabel,
+		layout.NewSpacer(),
+	)
+
+	// Buttons
+	a.startButton = widget.NewButtonWithIcon("Start", theme.MediaPlayIcon(), func() {
+		a.startTask(a.projectEntry.Text, a.descriptionEntry.Text)
+	})
+	a.startButton.Importance = widget.HighImportance
+
+	a.stopButton = widget.NewButtonWithIcon("Stop", theme.MediaStopIcon(), func() {
+		a.stopTask()
+	})
+	a.stopButton.Importance = widget.DangerImportance
+	a.stopButton.Disable()
+
+	inputContainer := container.NewVBox(
+		a.projectEntry,
+		a.descriptionEntry,
+		layout.NewSpacer(),
+		timerContainer,
+		layout.NewSpacer(),
+		container.NewGridWithColumns(2, a.startButton, a.stopButton),
+	)
+	
+	inputCard := widget.NewCard("New Task", "", container.NewPadded(inputContainer))
+
+	// Task List
+	a.taskList = widget.NewList(
+		a.getTaskCount,
+		func() fyne.CanvasObject {
+			// Template item
+			title := widget.NewLabel("Title")
+			title.TextStyle = fyne.TextStyle{Bold: true}
+			title.Truncation = fyne.TextTruncateEllipsis
+			
+			subtitle := widget.NewLabel("Subtitle")
+			subtitle.Truncation = fyne.TextTruncateEllipsis
+			subtitle.Importance = widget.LowImportance // Greyish
+			
+			icon := widget.NewIcon(theme.ContentPasteIcon())
+			
+			playBtn := widget.NewButtonWithIcon("", theme.MediaPlayIcon(), nil)
+			playBtn.Importance = widget.LowImportance
+			
+			textContainer := container.NewVBox(title, subtitle)
+			
+			// Layout: Icon | Text | Button
+			content := container.NewBorder(nil, nil, icon, playBtn, textContainer)
+			
+			// Add a background or Card wrapper? 
+			// A Card wrapper creates a nice separated look.
+			card := widget.NewCard("", "", content)
+			return card
+		},
+		func(id widget.ListItemID, item fyne.CanvasObject) {
+			card := item.(*widget.Card)
+			content := card.Content.(*fyne.Container)
+			
+			var icon *widget.Icon
+			var playBtn *widget.Button
+			var textContainer *fyne.Container
+
+			// Robustly find components by type
+			for _, obj := range content.Objects {
+				switch o := obj.(type) {
+				case *widget.Icon:
+					icon = o
+				case *widget.Button:
+					playBtn = o
+				case *fyne.Container:
+					textContainer = o
+				}
+			}
+
+			// Ensure we found them (optional safety check, but cleaner than panic)
+			if icon == nil || playBtn == nil || textContainer == nil {
+				return 
+			}
+
+			title := textContainer.Objects[0].(*widget.Label)
+			subtitle := textContainer.Objects[1].(*widget.Label)
+
+			titleText, subtitleText, itemType := a.getTaskItem(id)
+			
+			title.SetText(titleText)
+			subtitle.SetText(subtitleText)
+			
+			switch itemType {
+			case models.ItemTypeHeader:
+				icon.SetResource(theme.HistoryIcon()) // Calendar icon not standard? History is close.
+				playBtn.Hide()
+				title.TextStyle = fyne.TextStyle{Bold: true}
+				subtitle.TextStyle = fyne.TextStyle{Bold: true}
+				
+			case models.ItemTypeSummary:
+				icon.SetResource(theme.FolderIcon())
+				playBtn.Hide()
+				title.TextStyle = fyne.TextStyle{Bold: false} // Normal
+				subtitle.TextStyle = fyne.TextStyle{Italic: true}
+				
+			case models.ItemTypeTask:
+				icon.SetResource(theme.DocumentIcon()) // Task icon
+				playBtn.Show()
+				playBtn.OnTapped = func() {
+					task := a.getTask(id)
+					if task != nil {
+						a.continueTask(task)
+					}
+				}
+				title.TextStyle = fyne.TextStyle{Bold: true}
+				subtitle.TextStyle = fyne.TextStyle{}
+			}
+			
+			// Refresh the card layout
+			card.Refresh()
+		},
+	)
+
+	mainContent := container.NewBorder(
+		container.NewVBox(topBar, inputCard), // Top
+		nil, nil, nil,
+		container.NewPadded(a.taskList), // Center
+	)
+	
+	return mainContent
 }
 
 func main() {
 	myApp := app.New()
-	window := myApp.NewWindow("Project Time Tracker")
+	window := myApp.NewWindow("TrackYou")
 
-	// Initialize database
+	// Initialize DB
 	db, err := database.NewDB("tasks.db")
 	if err != nil {
 		dialog.ShowError(err, window)
 		return
 	}
-
 	if err := db.InitDB(); err != nil {
 		dialog.ShowError(err, window)
 		return
 	}
 
-	app := &App{
+	application := &App{
 		window:    window,
 		app:       myApp,
 		db:        db,
@@ -162,7 +396,7 @@ func main() {
 		timerStop: make(chan struct{}),
 	}
 
-	// Load theme preference
+	// Load Theme
 	savedTheme, err := db.GetTheme()
 	if err != nil {
 		dialog.ShowError(err, window)
@@ -170,117 +404,24 @@ func main() {
 	}
 	isDark := savedTheme == "dark"
 	if isDark {
-		myApp.Settings().SetTheme(theme.DarkTheme())
+		myApp.Settings().SetTheme(ui.NewMaterialTheme(theme.VariantDark))
+	} else {
+		myApp.Settings().SetTheme(ui.NewMaterialTheme(theme.VariantLight))
 	}
 
-	// Create UI elements
-	projectEntry := widget.NewEntry()
-	projectEntry.SetPlaceHolder("Project Name")
+	// --- UI Construction ---
+	mainContent := application.makeUI()
 
-	descriptionEntry := widget.NewEntry()
-	descriptionEntry.SetPlaceHolder("Task Description")
-
-	// Create timer label
-	app.timerLabel = widget.NewLabel("No task running")
-	app.timerLabel.Alignment = fyne.TextAlignCenter
-
-	// Create theme checkbox
-	app.themeCheck = widget.NewCheck("Dark Mode", func(isDark bool) {
-		app.toggleTheme(isDark)
-	})
-	app.themeCheck.SetChecked(isDark)
-
-	// Declare buttons first
-	startButton := widget.NewButton("Start Task", nil)
-	stopButton := widget.NewButton("Stop Task", nil)
-	stopButton.Disable()
-
-	// Set button callbacks
-	startButton.OnTapped = func() {
-		if app.currentTask != nil {
-			dialog.ShowInformation("Error", "A task is already running", window)
-			return
-		}
-
-		projectName := projectEntry.Text
-		description := descriptionEntry.Text
-
-		if projectName == "" {
-			dialog.ShowError(fmt.Errorf("project name is required"), window)
-			return
-		}
-
-		app.currentTask = models.NewTask(projectName, description)
-		startButton.Disable()
-		stopButton.Enable()
-		app.timerLabel.SetText("Starting...")
-		go app.updateTimer()
-	}
-
-	stopButton.OnTapped = func() {
-		if app.currentTask == nil {
-			dialog.ShowInformation("Error", "No task is running", window)
-			return
-		}
-
-		app.currentTask.StopTask()
-		if err := app.db.SaveTask(app.currentTask); err != nil {
-			dialog.ShowError(err, window)
-			return
-		}
-
-		// Prepend the new task to the beginning of the slice
-		app.tasks = append([]*models.Task{app.currentTask}, app.tasks...)
-		app.currentTask = nil
-		startButton.Enable()
-		stopButton.Disable()
-		app.taskList.Refresh()
-		app.timerStop <- struct{}{}
-		app.timerLabel.SetText("No task running")
-	}
-
-	// Create task list
-	app.taskList = widget.NewList(
-		app.getTaskCount,
-		func() fyne.CanvasObject {
-			return widget.NewLabel("Template")
-		},
-		func(id widget.ListItemID, item fyne.CanvasObject) {
-			text, isHeader := app.getTaskItem(id)
-			label := item.(*widget.Label)
-			label.SetText(text)
-			if isHeader {
-				label.TextStyle = fyne.TextStyle{Bold: true}
-			} else {
-				label.TextStyle = fyne.TextStyle{}
-			}
-		},
-	)
-
-	// Load existing tasks
-	tasks, err := app.db.GetTasks()
+	// Load Tasks
+	tasks, err := application.db.GetTasks()
 	if err != nil {
 		dialog.ShowError(err, window)
 		return
 	}
-	app.tasks = tasks
+	application.tasks = tasks
+	application.updateTaskGroups()
 
-	// Create layout
-	content := container.NewBorder(
-		container.NewVBox(
-			container.NewHBox(
-				app.themeCheck,
-			),
-			projectEntry,
-			descriptionEntry,
-			app.timerLabel,
-			container.NewHBox(startButton, stopButton),
-		),
-		nil, nil, nil,
-		app.taskList,
-	)
-
-	window.SetContent(content)
-	window.Resize(fyne.NewSize(600, 400))
+	window.SetContent(mainContent)
+	window.Resize(fyne.NewSize(500, 700)) // Portrait mobile-ish size
 	window.ShowAndRun()
 }

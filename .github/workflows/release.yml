@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   goreleaser:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -21,11 +21,35 @@ jobs:
         with:
           go-version: stable
 
+      - name: Install Dependencies
+        run: |
+          brew install mingw-w64
+          brew install filippo.io/musl-cross/musl-cross
+          brew install create-dmg
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v5
         with:
           distribution: goreleaser
           version: "~> v2"
           args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+
+      - name: Create MacOS DMGs
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          # GoReleaser output paths: dist/darwin_darwin_amd64_v1/trackyou, dist/darwin_darwin_arm64_v8.0/trackyou
+          
+          ./scripts/build-dmg.sh "$VERSION" "amd64" "dist/darwin_darwin_amd64_v1/trackyou"
+          ./scripts/build-dmg.sh "$VERSION" "arm64" "dist/darwin_darwin_arm64_v8.0/trackyou"
+
+      - name: Upload MacOS DMGs to Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: dist/*.dmg
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
