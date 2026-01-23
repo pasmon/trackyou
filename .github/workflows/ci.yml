@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  # lint:
+  #   name: Lint
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+      
+  #     - name: Set up Go
+  #       uses: actions/setup-go@v5
+  #       with:
+  #         go-version: '1.21'
+
+  #     - name: Run go mod tidy
+  #       run: go mod tidy
+
+  #     - name: golangci-lint
+  #       uses: golangci/golangci-lint-action@v6
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev xorg-dev libxtst-dev libpng++-dev
+          
+      - name: Run tests
+        run: |
+          go test -v ./...
+        env:
+          CGO_ENABLED: 1
+          FYNE_TEST_SKIP_GUI: 1
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev xorg-dev libxtst-dev libpng++-dev
+          
+      - name: Install fyne-cross
+        run: |
+          go install github.com/fyne-io/fyne-cross@latest
+          
+      - name: Build for Linux
+        run: GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -o trackyou-linux-amd64
+      - name: Build for Windows
+        run: fyne-cross windows -arch=amd64 -output=trackyou-windows-amd64.exe -app-id=com.trackyou.app
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries
+          path: trackyou-* 
