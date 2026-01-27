@@ -20,7 +20,7 @@ A simple desktop application for tracking time spent on different projects and t
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/trackyou.git
+git clone https://github.com/pasmon/trackyou.git
 cd trackyou
 ```
 

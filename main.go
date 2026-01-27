@@ -34,7 +34,7 @@ type App struct {
 	tasks       []*models.Task
 	taskGroups  []models.TaskGroup
 	currentTask *models.Task
-	
+
 	// UI Components
 	timerLabel       *widget.Label
 	timerStop        chan struct{}
@@ -59,7 +59,9 @@ func (a *App) updateTimer() {
 		case <-ticker.C:
 			if a.currentTask != nil {
 				duration := time.Since(a.currentTask.StartTime)
-				a.timerLabel.SetText(fmt.Sprintf("%v", duration.Round(time.Second)))
+				fyne.Do(func() {
+					a.timerLabel.SetText(fmt.Sprintf("%v", duration.Round(time.Second)))
+				})
 			}
 		case <-a.timerStop:
 			return
@@ -121,7 +123,7 @@ func (a *App) startTask(projectName, description string) {
 	a.currentTask = models.NewTask(projectName, description)
 	a.updateButtonsState(true)
 	a.timerLabel.SetText("Starting...")
-	
+
 	// Sync entries
 	a.projectEntry.SetText(projectName)
 	a.descriptionEntry.SetText(description)
@@ -151,23 +153,23 @@ func (a *App) stopTask() {
 	// Prepend
 	a.tasks = append([]*models.Task{a.currentTask}, a.tasks...)
 	a.updateTaskGroups()
-	
+
 	a.currentTask = nil
 	a.updateButtonsState(false)
-	
+
 	if a.taskList != nil {
 		a.taskList.Refresh()
 	}
-	
+
 	select {
 	case a.timerStop <- struct{}{}:
 	default:
 	}
-	
+
 	if a.timerLabel != nil {
 		a.timerLabel.SetText("Ready")
 	}
-	
+
 	// Stop Animation
 	if a.recordingAnim != nil {
 		a.recordingAnim.Stop()
@@ -206,7 +208,7 @@ func (a *App) makeUI() fyne.CanvasObject {
 	// Initialize check state based on current theme
 	currentTheme, _ := a.db.GetTheme()
 	themeCheck.SetChecked(currentTheme == "dark")
-	
+
 	topBar := container.NewHBox(layout.NewSpacer(), themeCheck)
 
 	// Input Area
@@ -219,12 +221,12 @@ func (a *App) makeUI() fyne.CanvasObject {
 	a.timerLabel = widget.NewLabel("Ready")
 	a.timerLabel.TextStyle = fyne.TextStyle{Bold: true}
 	a.timerLabel.Alignment = fyne.TextAlignCenter
-	
+
 	// Recording Icon (Red Circle)
 	a.recordingIcon = canvas.NewCircle(color.RGBA{R: 255, G: 0, B: 0, A: 255})
 	a.recordingIcon.Resize(fyne.NewSize(12, 12))
 	a.recordingIcon.Hide()
-	
+
 	// Recording Animation (Pulse Opacity)
 	a.recordingAnim = fyne.NewAnimation(2*time.Second, func(p float32) {
 		// Pulse alpha from 0.2 to 1.0 and back
@@ -269,7 +271,7 @@ func (a *App) makeUI() fyne.CanvasObject {
 		layout.NewSpacer(),
 		container.NewGridWithColumns(2, a.startButton, a.stopButton),
 	)
-	
+
 	inputCard := widget.NewCard("New Task", "", container.NewPadded(inputContainer))
 
 	// Task List
@@ -280,22 +282,22 @@ func (a *App) makeUI() fyne.CanvasObject {
 			title := widget.NewLabel("Title")
 			title.TextStyle = fyne.TextStyle{Bold: true}
 			title.Truncation = fyne.TextTruncateEllipsis
-			
+
 			subtitle := widget.NewLabel("Subtitle")
 			subtitle.Truncation = fyne.TextTruncateEllipsis
 			subtitle.Importance = widget.LowImportance // Greyish
-			
+
 			icon := widget.NewIcon(theme.ContentPasteIcon())
-			
+
 			playBtn := widget.NewButtonWithIcon("", theme.MediaPlayIcon(), nil)
 			playBtn.Importance = widget.LowImportance
-			
+
 			textContainer := container.NewVBox(title, subtitle)
-			
+
 			// Layout: Icon | Text | Button
 			content := container.NewBorder(nil, nil, icon, playBtn, textContainer)
-			
-			// Add a background or Card wrapper? 
+
+			// Add a background or Card wrapper?
 			// A Card wrapper creates a nice separated look.
 			card := widget.NewCard("", "", content)
 			return card
@@ -303,7 +305,7 @@ func (a *App) makeUI() fyne.CanvasObject {
 		func(id widget.ListItemID, item fyne.CanvasObject) {
 			card := item.(*widget.Card)
 			content := card.Content.(*fyne.Container)
-			
+
 			var icon *widget.Icon
 			var playBtn *widget.Button
 			var textContainer *fyne.Container
@@ -322,30 +324,30 @@ func (a *App) makeUI() fyne.CanvasObject {
 
 			// Ensure we found them (optional safety check, but cleaner than panic)
 			if icon == nil || playBtn == nil || textContainer == nil {
-				return 
+				return
 			}
 
 			title := textContainer.Objects[0].(*widget.Label)
 			subtitle := textContainer.Objects[1].(*widget.Label)
 
 			titleText, subtitleText, itemType := a.getTaskItem(id)
-			
+
 			title.SetText(titleText)
 			subtitle.SetText(subtitleText)
-			
+
 			switch itemType {
 			case models.ItemTypeHeader:
 				icon.SetResource(theme.HistoryIcon()) // Calendar icon not standard? History is close.
 				playBtn.Hide()
 				title.TextStyle = fyne.TextStyle{Bold: true}
 				subtitle.TextStyle = fyne.TextStyle{Bold: true}
-				
+
 			case models.ItemTypeSummary:
 				icon.SetResource(theme.FolderIcon())
 				playBtn.Hide()
 				title.TextStyle = fyne.TextStyle{Bold: false} // Normal
 				subtitle.TextStyle = fyne.TextStyle{Italic: true}
-				
+
 			case models.ItemTypeTask:
 				icon.SetResource(theme.DocumentIcon()) // Task icon
 				playBtn.Show()
@@ -358,7 +360,7 @@ func (a *App) makeUI() fyne.CanvasObject {
 				title.TextStyle = fyne.TextStyle{Bold: true}
 				subtitle.TextStyle = fyne.TextStyle{}
 			}
-			
+
 			// Refresh the card layout
 			card.Refresh()
 		},
@@ -369,7 +371,7 @@ func (a *App) makeUI() fyne.CanvasObject {
 		nil, nil, nil,
 		container.NewPadded(a.taskList), // Center
 	)
-	
+
 	return mainContent
 }
 
