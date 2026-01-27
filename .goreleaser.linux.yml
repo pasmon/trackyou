@@ -73,6 +73,9 @@ checksum:
   name_template: 'checksums-linux.txt'
   algorithm: sha256
 
+release:
+  draft: true
+
 changelog:
   sort: asc
   filters:
