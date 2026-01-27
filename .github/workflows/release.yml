@@ -24,7 +24,9 @@ jobs:
       - name: Install Dependencies
         run: |
           brew install mingw-w64
-          brew install filippo.io/musl-cross/musl-cross
+          brew tap messense/macos-cross-toolchains
+          brew install x86_64-unknown-linux-musl
+          brew install aarch64-unknown-linux-musl
           brew install create-dmg
 
       - name: Run GoReleaser
