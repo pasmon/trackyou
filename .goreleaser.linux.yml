@@ -1,0 +1,85 @@
+version: 2
+project_name: trackyou
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: linux-amd64
+    goos:
+      - linux
+    goarch:
+      - amd64
+    env:
+      - CGO_ENABLED=1
+      - CC=gcc
+      - CXX=g++
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.CommitDate}}
+    flags:
+      - -tags=release
+
+  # ARM64 Linux build disabled due to cross-compilation complexity on GitHub Actions (missing headers).
+  # - id: linux-arm64
+  #   goos:
+  #     - linux
+  #   goarch:
+  #     - arm64
+  #   env:
+  #     - CGO_ENABLED=1
+  #     - CC=aarch64-linux-gnu-gcc
+  #     - CXX=aarch64-linux-gnu-g++
+  #   ldflags:
+  #     - -s -w
+  #     - -X main.version={{.Version}}
+  #     - -X main.commit={{.Commit}}
+  #     - -X main.date={{.CommitDate}}
+  #   flags:
+  #     - -tags=release
+      
+  - id: windows
+    goos:
+      - windows
+    goarch:
+      - amd64
+    env:
+      - CGO_ENABLED=1
+      - CC=x86_64-w64-mingw32-gcc
+      - CXX=x86_64-w64-mingw32-g++
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.CommitDate}}
+      - -H=windowsgui
+
+archives:
+  - formats: ['tar.gz']
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+    format_overrides:
+      - goos: windows
+        formats: ['zip']
+
+checksum:
+  name_template: 'checksums-linux.txt'
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - '^chore:'
+      - Merge pull request
+      - Merge branch
