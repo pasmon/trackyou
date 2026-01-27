@@ -62,6 +62,16 @@ func (t *materialTheme) Color(name fyne.ThemeColorName, _ fyne.ThemeVariant) col
 			return color.RGBA{R: 0x55, G: 0x55, B: 0x55, A: 0xAA}
 		}
 		return color.RGBA{R: 0xAA, G: 0xAA, B: 0xAA, A: 0xAA}
+	case theme.ColorNameDisabled:
+		if isDark {
+			return color.RGBA{R: 0xAB, G: 0xAB, B: 0xAB, A: 0xFF} // Lighter grey for disabled text in dark mode
+		}
+		return color.RGBA{R: 0xAD, G: 0xAD, B: 0xAD, A: 0xFF} // Default light theme disabled
+	case theme.ColorNameDisabledButton:
+		if isDark {
+			return color.RGBA{R: 0x42, G: 0x42, B: 0x42, A: 0xFF} // Darker grey for disabled button background
+		}
+		return color.RGBA{R: 0xE5, G: 0xE5, B: 0xE5, A: 0xFF}
 	}
 
 	return theme.DefaultTheme().Color(name, t.variant)
