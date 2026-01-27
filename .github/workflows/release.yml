@@ -85,5 +85,6 @@ jobs:
             dist/*.dmg
             dist/*.tar.gz
             dist/checksums-macos.txt
+          draft: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
