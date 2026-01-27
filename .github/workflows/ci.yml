@@ -74,7 +74,7 @@ jobs:
         run: fyne-cross windows -arch=amd64 -output=trackyou-windows-amd64.exe -app-id=com.trackyou.app
       
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: binaries
           path: trackyou-* 
