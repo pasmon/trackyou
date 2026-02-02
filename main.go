@@ -428,6 +428,15 @@ func main() {
 	application.tasks = tasks
 	application.updateTaskGroups()
 
+	// --- Menu Construction ---
+	helpMenu := fyne.NewMenu("Help",
+		fyne.NewMenuItem("About", func() {
+			ui.ShowAboutDialog(myApp, window, version, date, commit)
+		}),
+	)
+	mainMenu := fyne.NewMainMenu(helpMenu)
+	window.SetMainMenu(mainMenu)
+
 	window.SetContent(mainContent)
 	window.Resize(fyne.NewSize(500, 700)) // Portrait mobile-ish size
 	window.ShowAndRun()
