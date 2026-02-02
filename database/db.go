@@ -2,11 +2,29 @@ package database
 
 import (
 	"database/sql"
+	"os"
+	"path/filepath"
 	"time"
 	"trackyou/models"
 
 	_ "github.com/mattn/go-sqlite3"
 )
+
+// GetDefaultDBPath returns the platform-specific default path for the database file.
+// It ensures the directory structure exists.
+func GetDefaultDBPath() (string, error) {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+
+	appDir := filepath.Join(configDir, "TrackYou")
+	if err := os.MkdirAll(appDir, 0700); err != nil {
+		return "", err
+	}
+
+	return filepath.Join(appDir, "tasks.db"), nil
+}
 
 type DB struct {
 	*sql.DB

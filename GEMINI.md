@@ -31,7 +31,7 @@ The project follows a simple structure:
 
 ## Development Conventions
 
-*   **Database:** The application uses a local SQLite file (`tasks.db`). Tables (`tasks`, `preferences`) are created automatically if they don't exist on startup.
+*   **Database:** The application uses a local SQLite file (`tasks.db`) stored in the OS-specific user configuration directory. Tables (`tasks`, `preferences`) are created automatically if they don't exist on startup.
 *   **UI:** The UI is constructed procedurally in `main.go`. Theme changes are persisted to the database.
 *   **Release:** Releases are automated via `goreleaser` (configured in `.goreleaser.yml`), producing binaries for Linux and Windows (amd64/arm64).
 *   **Cross-Compilation:** The project uses `fyne-cross` in CI for building Windows binaries from Linux.

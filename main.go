@@ -380,13 +380,18 @@ func main() {
 	window := myApp.NewWindow("TrackYou")
 
 	// Initialize DB
-	db, err := database.NewDB("tasks.db")
+	dbPath, err := database.GetDefaultDBPath()
 	if err != nil {
-		dialog.ShowError(err, window)
+		fmt.Fprintf(os.Stderr, "Failed to get database path: %v\n", err)
+		return
+	}
+	db, err := database.NewDB(dbPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to connect to database: %v\n", err)
 		return
 	}
 	if err := db.InitDB(); err != nil {
-		dialog.ShowError(err, window)
+		fmt.Fprintf(os.Stderr, "Failed to initialize database: %v\n", err)
 		return
 	}
 
@@ -401,7 +406,7 @@ func main() {
 	// Load Theme
 	savedTheme, err := db.GetTheme()
 	if err != nil {
-		dialog.ShowError(err, window)
+		fmt.Fprintf(os.Stderr, "Failed to load theme preference: %v\n", err)
 		return
 	}
 	isDark := savedTheme == "dark"
@@ -417,7 +422,7 @@ func main() {
 	// Load Tasks
 	tasks, err := application.db.GetTasks()
 	if err != nil {
-		dialog.ShowError(err, window)
+		fmt.Fprintf(os.Stderr, "Failed to load tasks: %v\n", err)
 		return
 	}
 	application.tasks = tasks
