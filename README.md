@@ -48,7 +48,7 @@ go build
 
 ## Data Storage
 
-All task data is stored locally in a SQLite database file named `tasks.db` in the application directory.
+All task data is stored locally in a SQLite database file named `tasks.db` located in the user's configuration directory (e.g., `~/.config/TrackYou` on Linux, `~/Library/Application Support/TrackYou` on macOS, `%APPDATA%\TrackYou` on Windows).
 
 ## License
 
