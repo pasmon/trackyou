@@ -19,7 +19,7 @@ func GetDefaultDBPath() (string, error) {
 	}
 
 	appDir := filepath.Join(configDir, "TrackYou")
-	if err := os.MkdirAll(appDir, 0755); err != nil {
+	if err := os.MkdirAll(appDir, 0700); err != nil {
 		return "", err
 	}
 
