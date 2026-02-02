@@ -431,7 +431,7 @@ func main() {
 	// --- Menu Construction ---
 	helpMenu := fyne.NewMenu("Help",
 		fyne.NewMenuItem("About", func() {
-			ui.ShowAboutDialog(myApp, window, version, date, commit)
+			ui.ShowAboutWindow(myApp, version, date, commit)
 		}),
 	)
 	mainMenu := fyne.NewMainMenu(helpMenu)
