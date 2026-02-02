@@ -380,7 +380,12 @@ func main() {
 	window := myApp.NewWindow("TrackYou")
 
 	// Initialize DB
-	db, err := database.NewDB("tasks.db")
+	dbPath, err := database.GetDefaultDBPath()
+	if err != nil {
+		dialog.ShowError(err, window)
+		return
+	}
+	db, err := database.NewDB(dbPath)
 	if err != nil {
 		dialog.ShowError(err, window)
 		return
