@@ -25,18 +25,74 @@ const (
 	ItemTypeTask
 )
 
+type FlatListItem struct {
+	Type     ItemType
+	Title    string
+	Subtitle string
+	Task     *Task
+}
+
+func FlattenTaskGroups(groups []TaskGroup) []FlatListItem {
+	// Pre-calculate capacity: 1 header + summaries + tasks per group
+	capacity := 0
+	for _, group := range groups {
+		capacity += 1 + len(group.ProjectSummaries) + len(group.Tasks)
+	}
+	items := make([]FlatListItem, 0, capacity)
+	for _, group := range groups {
+		// Date header
+		var totalDuration time.Duration
+		for _, task := range group.Tasks {
+			totalDuration += task.Duration
+		}
+		items = append(items, FlatListItem{
+			Type:     ItemTypeHeader,
+			Title:    group.Date.Format("Monday, January 2"),
+			Subtitle: fmt.Sprintf("Total: %v", totalDuration.Round(time.Second)),
+		})
+
+		// Project summaries
+		for _, summary := range group.ProjectSummaries {
+			items = append(items, FlatListItem{
+				Type:     ItemTypeSummary,
+				Title:    summary.Name,
+				Subtitle: fmt.Sprintf("%v", summary.Duration.Round(time.Second)),
+			})
+		}
+
+		// Tasks
+		for _, task := range group.Tasks {
+			items = append(items, FlatListItem{
+				Type:     ItemTypeTask,
+				Title:    task.ProjectName,
+				Subtitle: fmt.Sprintf("%s (%v)", task.Description, task.Duration.Round(time.Second)),
+				Task:     task,
+			})
+		}
+	}
+	return items
+}
+
 func GroupTasksByDate(tasks []*Task) []TaskGroup {
 	// Create a map to group tasks by date
-	groups := make(map[string][]*Task)
+	type dateKey struct {
+		y int
+		m time.Month
+		d int
+	}
+	groups := make(map[dateKey][]*Task)
 	for _, task := range tasks {
-		date := task.StartTime.Format("2006-01-02")
-		groups[date] = append(groups[date], task)
+		y, m, d := task.StartTime.Date()
+		key := dateKey{y, m, d}
+		groups[key] = append(groups[key], task)
 	}
 
 	// Convert map to slice and sort by date
 	var taskGroups []TaskGroup
-	for dateStr, tasksInGroup := range groups {
-		date, _ := time.Parse("2006-01-02", dateStr)
+	for key, tasksInGroup := range groups {
+		// Use the location of the first task to avoid timezone drift
+		loc := tasksInGroup[0].StartTime.Location()
+		date := time.Date(key.y, key.m, key.d, 0, 0, 0, 0, loc)
 		// Sort tasks within each group by start time
 		sort.Slice(tasksInGroup, func(i, j int) bool {
 			return tasksInGroup[i].StartTime.After(tasksInGroup[j].StartTime)
@@ -70,90 +126,4 @@ func GroupTasksByDate(tasks []*Task) []TaskGroup {
 	})
 
 	return taskGroups
-}
-
-// GetTaskItemData returns structured data for a list item
-func GetTaskItemData(groups []TaskGroup, id int) (title, subtitle string, itemType ItemType) {
-	currentIndex := 0
-
-	for _, group := range groups {
-		// Date header
-		if currentIndex == id {
-			var totalDuration time.Duration
-			for _, task := range group.Tasks {
-				totalDuration += task.Duration
-			}
-			return group.Date.Format("Monday, January 2"), 
-				fmt.Sprintf("Total: %v", totalDuration.Round(time.Second)), 
-				ItemTypeHeader
-		}
-		currentIndex++
-
-		// Project summaries
-		if id < currentIndex+len(group.ProjectSummaries) {
-			summary := group.ProjectSummaries[id-currentIndex]
-			return summary.Name, 
-				fmt.Sprintf("%v", summary.Duration.Round(time.Second)), 
-				ItemTypeSummary
-		}
-		currentIndex += len(group.ProjectSummaries)
-
-		// Tasks
-		if id < currentIndex+len(group.Tasks) {
-			task := group.Tasks[id-currentIndex]
-			return task.ProjectName, 
-				fmt.Sprintf("%s (%v)", task.Description, task.Duration.Round(time.Second)), 
-				ItemTypeTask
-		}
-		currentIndex += len(group.Tasks)
-	}
-
-	return "", "", ItemTypeHeader
-}
-
-// Deprecated: Use GetTaskItemData instead (kept for now to avoid breaking if not updated)
-func GetTaskItemInfo(groups []TaskGroup, id int) (text string, isHeader bool) {
-	title, subtitle, itemType := GetTaskItemData(groups, id)
-	if itemType == ItemTypeHeader {
-		return fmt.Sprintf("=== %s (%s) ===", title, subtitle), true
-	} else if itemType == ItemTypeSummary {
-		return fmt.Sprintf("  Total %s: %s", title, subtitle), true
-	}
-	return fmt.Sprintf("    %s - %s", title, subtitle), false
-}
-
-func GetTotalItemCount(groups []TaskGroup) int {
-	count := 0
-	for _, group := range groups {
-		count++ // Date header
-		count += len(group.ProjectSummaries)
-		count += len(group.Tasks)
-	}
-	return count
-}
-
-func GetTaskByListItemID(groups []TaskGroup, id int) *Task {
-	currentIndex := 0
-
-	for _, group := range groups {
-		// Skip date header
-		if currentIndex == id {
-			return nil
-		}
-		currentIndex++
-
-		// Skip project summaries
-		if id < currentIndex+len(group.ProjectSummaries) {
-			return nil
-		}
-		currentIndex += len(group.ProjectSummaries)
-
-		// Check tasks
-		if id < currentIndex+len(group.Tasks) {
-			return group.Tasks[id-currentIndex]
-		}
-		currentIndex += len(group.Tasks)
-	}
-
-	return nil
 }
