@@ -90,7 +90,9 @@ func GroupTasksByDate(tasks []*Task) []TaskGroup {
 	// Convert map to slice and sort by date
 	var taskGroups []TaskGroup
 	for key, tasksInGroup := range groups {
-		date := time.Date(key.y, key.m, key.d, 0, 0, 0, 0, time.Local)
+		// Use the location of the first task to avoid timezone drift
+		loc := tasksInGroup[0].StartTime.Location()
+		date := time.Date(key.y, key.m, key.d, 0, 0, 0, 0, loc)
 		// Sort tasks within each group by start time
 		sort.Slice(tasksInGroup, func(i, j int) bool {
 			return tasksInGroup[i].StartTime.After(tasksInGroup[j].StartTime)

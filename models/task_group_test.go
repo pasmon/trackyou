@@ -93,3 +93,33 @@ func TestFlattenTaskGroups(t *testing.T) {
 		t.Errorf("expected subtitle '%s', got '%s'", expectedSub, items[2].Subtitle)
 	}
 }
+
+func TestGroupTasksByDate_Timezone(t *testing.T) {
+	loc := time.FixedZone("Custom", -5*60*60)
+
+	// Create a task at 11 PM in custom timezone
+	startTime := time.Date(2024, 10, 10, 23, 0, 0, 0, loc)
+	tasks := []*Task{
+		{
+			ProjectName: "P1",
+			StartTime:   startTime,
+			Duration:    time.Hour,
+		},
+	}
+
+	groups := GroupTasksByDate(tasks)
+
+	if len(groups) != 1 {
+		t.Fatalf("expected 1 group, got %d", len(groups))
+	}
+
+	groupDate := groups[0].Date
+	if groupDate.Location().String() != loc.String() {
+		t.Errorf("expected group date location %v, got %v", loc, groupDate.Location())
+	}
+
+	y, m, d := groupDate.Date()
+	if y != 2024 || m != 10 || d != 10 {
+		t.Errorf("expected date 2024-10-10, got %d-%d-%d", y, m, d)
+	}
+}
