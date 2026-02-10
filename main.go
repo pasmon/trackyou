@@ -33,6 +33,7 @@ type App struct {
 	taskList    *widget.List
 	tasks       []*models.Task
 	taskGroups  []models.TaskGroup
+	flatItems   []models.FlatListItem
 	currentTask *models.Task
 
 	// UI Components
@@ -43,24 +44,32 @@ type App struct {
 	startButton      *widget.Button
 	stopButton       *widget.Button
 	recordingIcon    *canvas.Circle
-	recordingAnim    *fyne.Animation
 }
 
 func (a *App) updateTaskGroups() {
 	a.taskGroups = models.GroupTasksByDate(a.tasks)
+	a.flatItems = models.FlattenTaskGroups(a.taskGroups)
 }
 
 func (a *App) updateTimer() {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
+	blink := false
 	for {
 		select {
 		case <-ticker.C:
 			if a.currentTask != nil {
 				duration := time.Since(a.currentTask.StartTime)
+				blink = !blink
 				fyne.Do(func() {
 					a.timerLabel.SetText(fmt.Sprintf("%v", duration.Round(time.Second)))
+					if blink {
+						a.recordingIcon.FillColor = color.RGBA{R: 255, G: 0, B: 0, A: 255}
+					} else {
+						a.recordingIcon.FillColor = color.RGBA{R: 255, G: 0, B: 0, A: 100}
+					}
+					a.recordingIcon.Refresh()
 				})
 			}
 		case <-a.timerStop:
@@ -96,15 +105,22 @@ func themeName(isDark bool) string {
 }
 
 func (a *App) getTaskItem(id widget.ListItemID) (title, subtitle string, itemType models.ItemType) {
-	return models.GetTaskItemData(a.taskGroups, int(id))
+	if id < 0 || id >= len(a.flatItems) {
+		return "", "", models.ItemTypeHeader
+	}
+	item := a.flatItems[id]
+	return item.Title, item.Subtitle, item.Type
 }
 
 func (a *App) getTaskCount() int {
-	return models.GetTotalItemCount(a.taskGroups)
+	return len(a.flatItems)
 }
 
 func (a *App) getTask(id widget.ListItemID) *models.Task {
-	return models.GetTaskByListItemID(a.taskGroups, int(id))
+	if id < 0 || id >= len(a.flatItems) {
+		return nil
+	}
+	return a.flatItems[id].Task
 }
 
 func (a *App) startTask(projectName, description string) {
@@ -128,10 +144,6 @@ func (a *App) startTask(projectName, description string) {
 	a.projectEntry.SetText(projectName)
 	a.descriptionEntry.SetText(description)
 
-	// Start Animation
-	if a.recordingAnim != nil {
-		a.recordingAnim.Start()
-	}
 	if a.recordingIcon != nil {
 		a.recordingIcon.Show()
 	}
@@ -170,10 +182,6 @@ func (a *App) stopTask() {
 		a.timerLabel.SetText("Ready")
 	}
 
-	// Stop Animation
-	if a.recordingAnim != nil {
-		a.recordingAnim.Stop()
-	}
 	if a.recordingIcon != nil {
 		a.recordingIcon.Hide()
 	}
@@ -226,23 +234,6 @@ func (a *App) makeUI() fyne.CanvasObject {
 	a.recordingIcon = canvas.NewCircle(color.RGBA{R: 255, G: 0, B: 0, A: 255})
 	a.recordingIcon.Resize(fyne.NewSize(12, 12))
 	a.recordingIcon.Hide()
-
-	// Recording Animation (Pulse Opacity)
-	a.recordingAnim = fyne.NewAnimation(2*time.Second, func(p float32) {
-		// Pulse alpha from 0.2 to 1.0 and back
-		alpha := uint8(255 * (0.5 + 0.5*p)) // simplify: just fade in?
-		// Triangle wave
-		if p > 0.5 {
-			p = 1.0 - p
-		}
-		// p is 0 -> 0.5 -> 0
-		alpha = uint8(255 * (0.3 + 1.4*p)) // 0.3 to 1.0 approx
-		c := color.RGBA{R: 255, G: 0, B: 0, A: alpha}
-		a.recordingIcon.FillColor = c
-		a.recordingIcon.Refresh()
-	})
-	a.recordingAnim.RepeatCount = fyne.AnimationRepeatForever
-	a.recordingAnim.AutoReverse = false
 
 	timerContainer := container.NewHBox(
 		layout.NewSpacer(),
