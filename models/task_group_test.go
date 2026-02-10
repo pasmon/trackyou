@@ -38,24 +38,7 @@ func TestGroupTasksByDate(t *testing.T) {
 	}
 }
 
-func TestGetTotalItemCount(t *testing.T) {
-	groups := []TaskGroup{
-		{
-			Tasks: []*Task{{}, {}},
-			ProjectSummaries: []ProjectSummary{{}, {}},
-		},
-		{
-			Tasks: []*Task{{}},
-			ProjectSummaries: []ProjectSummary{{}},
-		},
-	}
-	count := GetTotalItemCount(groups)
-	if count != 8 {
-		t.Errorf("expected 8 items, got %d", count)
-	}
-}
-
-func TestGetTaskItemData(t *testing.T) {
+func TestFlattenTaskGroups(t *testing.T) {
 	date := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	groups := []TaskGroup{
 		{
@@ -73,37 +56,40 @@ func TestGetTaskItemData(t *testing.T) {
 		},
 	}
 
+	items := FlattenTaskGroups(groups)
+
+	if len(items) != 3 {
+		t.Fatalf("expected 3 items, got %d", len(items))
+	}
+
 	// Index 0: Header
-	title, sub, itemType := GetTaskItemData(groups, 0)
-	if itemType != ItemTypeHeader {
+	if items[0].Type != ItemTypeHeader {
 		t.Error("expected index 0 to be header")
 	}
-	if title != "Monday, January 1" {
-		t.Errorf("expected title 'Monday, January 1', got '%s'", title)
+	if items[0].Title != "Monday, January 1" {
+		t.Errorf("expected title 'Monday, January 1', got '%s'", items[0].Title)
 	}
-	if sub != "Total: 1h0m0s" {
-		t.Errorf("expected subtitle 'Total: 1h0m0s', got '%s'", sub)
+	if items[0].Subtitle != "Total: 1h0m0s" {
+		t.Errorf("expected subtitle 'Total: 1h0m0s', got '%s'", items[0].Subtitle)
 	}
 
 	// Index 1: Project Summary (P1)
-	title, sub, itemType = GetTaskItemData(groups, 1)
-	if itemType != ItemTypeSummary {
+	if items[1].Type != ItemTypeSummary {
 		t.Error("expected index 1 to be summary")
 	}
-	if title != "P1" {
-		t.Errorf("expected title 'P1', got '%s'", title)
+	if items[1].Title != "P1" {
+		t.Errorf("expected title 'P1', got '%s'", items[1].Title)
 	}
 
 	// Index 2: Task
-	title, sub, itemType = GetTaskItemData(groups, 2)
-	if itemType != ItemTypeTask {
+	if items[2].Type != ItemTypeTask {
 		t.Error("expected index 2 to be task")
 	}
-	if title != "P1" {
-		t.Errorf("expected title 'P1', got '%s'", title)
+	if items[2].Title != "P1" {
+		t.Errorf("expected title 'P1', got '%s'", items[2].Title)
 	}
 	expectedSub := "D1 (1h0m0s)"
-	if sub != expectedSub {
-		t.Errorf("expected subtitle '%s', got '%s'", expectedSub, sub)
+	if items[2].Subtitle != expectedSub {
+		t.Errorf("expected subtitle '%s', got '%s'", expectedSub, items[2].Subtitle)
 	}
 }
