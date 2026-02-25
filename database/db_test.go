@@ -120,3 +120,56 @@ func TestDB_ThemePreferences(t *testing.T) {
 		t.Errorf("expected theme dark, got %s", theme)
 	}
 }
+
+func TestDB_IdleThreshold(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	// Default should be 5
+	threshold, err := db.GetIdleThreshold()
+	if err != nil {
+		t.Fatalf("failed to get default threshold: %v", err)
+	}
+	if threshold != 5 {
+		t.Errorf("expected default threshold 5, got %d", threshold)
+	}
+
+	// Valid set
+	err = db.SetIdleThreshold(10)
+	if err != nil {
+		t.Fatalf("failed to set threshold: %v", err)
+	}
+	threshold, _ = db.GetIdleThreshold()
+	if threshold != 10 {
+		t.Errorf("expected threshold 10, got %d", threshold)
+	}
+
+	// Invalid set (too low)
+	err = db.SetIdleThreshold(0)
+	if err == nil {
+		t.Error("expected error when setting threshold to 0, got nil")
+	}
+	err = db.SetIdleThreshold(-5)
+	if err == nil {
+		t.Error("expected error when setting threshold to -5, got nil")
+	}
+
+	// Manual database entry with invalid value should return default 5
+	_, err = db.Exec("INSERT OR REPLACE INTO preferences (key, value) VALUES ('idle_threshold', '0')")
+	if err != nil {
+		t.Fatalf("failed to insert invalid threshold: %v", err)
+	}
+	threshold, _ = db.GetIdleThreshold()
+	if threshold != 5 {
+		t.Errorf("expected default 5 for invalid DB value 0, got %d", threshold)
+	}
+
+	_, err = db.Exec("INSERT OR REPLACE INTO preferences (key, value) VALUES ('idle_threshold', 'invalid')")
+	if err != nil {
+		t.Fatalf("failed to insert non-numeric threshold: %v", err)
+	}
+	threshold, _ = db.GetIdleThreshold()
+	if threshold != 5 {
+		t.Errorf("expected default 5 for non-numeric DB value, got %d", threshold)
+	}
+}
