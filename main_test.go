@@ -202,11 +202,13 @@ func TestIntegration_DataPersistence(t *testing.T) {
 		myApp := test.NewApp()
 		window := test.NewWindow(nil)
 		app := &App{
-			window:    window,
-			app:       myApp,
-			db:        db,
-			tasks:     make([]*models.Task, 0),
-			timerStop: make(chan struct{}),
+			window:        window,
+			app:           myApp,
+			db:            db,
+			tasks:         make([]*models.Task, 0),
+			timerStop:     make(chan struct{}),
+			idleThreshold: 5,
+			idleSince:     time.Now(),
 		}
 		
 		// Simulate loading tasks as main() does

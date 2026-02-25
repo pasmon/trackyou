@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"image/color"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -40,6 +42,8 @@ type App struct {
 	mu            sync.RWMutex
 	idleThreshold int
 	idleSince     time.Time
+	idleCtx       context.Context
+	idleCancel    context.CancelFunc
 
 	// UI Components
 	timerLabel       *widget.Label
@@ -207,7 +211,7 @@ func (a *App) stopTask() {
 	}
 }
 
-func (a *App) monitorIdle() {
+func (a *App) monitorIdle(ctx context.Context) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
@@ -215,6 +219,8 @@ func (a *App) monitorIdle() {
 
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case <-ticker.C:
 			if a.checkIdle(&lastNotified) {
 				lastNotified = time.Now()
@@ -235,7 +241,12 @@ func (a *App) checkIdle(lastNotified *time.Time) bool {
 	if task == nil && !idleSince.IsZero() {
 		idleDuration := time.Since(idleSince)
 
-		if idleDuration >= threshold && time.Since(*lastNotified) >= threshold {
+		rearmInterval := threshold
+		if rearmInterval < 5*time.Minute {
+			rearmInterval = 5 * time.Minute
+		}
+
+		if idleDuration >= threshold && time.Since(*lastNotified) >= rearmInterval {
 			a.app.SendNotification(fyne.NewNotification(
 				"TrackYou",
 				fmt.Sprintf("You've been idle for %d minutes. Don't forget to start a task!", int(idleDuration.Minutes())),
@@ -281,8 +292,7 @@ func (a *App) showSettings() {
 
 	dialog.ShowForm("Settings", "Save", "Cancel", items, func(confirmed bool) {
 		if confirmed {
-			var val int
-			_, err := fmt.Sscanf(thresholdEntry.Text, "%d", &val)
+			val, err := strconv.Atoi(thresholdEntry.Text)
 			if err != nil || val < 1 {
 				a.showDialogError(fmt.Errorf("invalid threshold value"))
 				return
@@ -482,6 +492,8 @@ func main() {
 		idleThreshold = 5
 	}
 
+	idleCtx, idleCancel := context.WithCancel(context.Background())
+
 	application := &App{
 		window:        window,
 		app:           myApp,
@@ -490,9 +502,11 @@ func main() {
 		timerStop:     make(chan struct{}),
 		idleThreshold: idleThreshold,
 		idleSince:     time.Now(), // Assume idle from start
+		idleCtx:       idleCtx,
+		idleCancel:    idleCancel,
 	}
 
-	go application.monitorIdle()
+	go application.monitorIdle(idleCtx)
 
 	// Load Theme
 	savedTheme, err := db.GetTheme()
@@ -526,6 +540,7 @@ func main() {
 		}),
 		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("Quit", func() {
+			application.idleCancel()
 			myApp.Quit()
 		}),
 	)
@@ -540,4 +555,5 @@ func main() {
 	window.SetContent(mainContent)
 	window.Resize(fyne.NewSize(500, 700)) // Portrait mobile-ish size
 	window.ShowAndRun()
+	application.idleCancel()
 }

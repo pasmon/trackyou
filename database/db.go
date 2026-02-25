@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 	"trackyou/models"
 
@@ -183,8 +184,7 @@ func (db *DB) GetIdleThreshold() (int, error) {
 		}
 		return 5, err
 	}
-	var val int
-	_, err = fmt.Sscanf(threshold, "%d", &val)
+	val, err := strconv.Atoi(threshold)
 	if err != nil || val < 1 {
 		return 5, nil
 	}
@@ -199,6 +199,6 @@ func (db *DB) SetIdleThreshold(minutes int) error {
 	query := `
 	INSERT OR REPLACE INTO preferences (key, value)
 	VALUES ('idle_threshold', ?)`
-	_, err := db.Exec(query, fmt.Sprintf("%d", minutes))
+	_, err := db.Exec(query, strconv.Itoa(minutes))
 	return err
 }
