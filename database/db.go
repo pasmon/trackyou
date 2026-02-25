@@ -2,6 +2,7 @@ package database
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -71,6 +72,15 @@ func (db *DB) InitDB() error {
 	_, err := db.Exec(`
 		INSERT OR IGNORE INTO preferences (key, value) 
 		VALUES ('theme', 'light')
+	`)
+	if err != nil {
+		return err
+	}
+
+	// Set default idle threshold if not exists (5 minutes)
+	_, err = db.Exec(`
+		INSERT OR IGNORE INTO preferences (key, value) 
+		VALUES ('idle_threshold', '5')
 	`)
 	return err
 }
@@ -160,5 +170,29 @@ func (db *DB) SetTheme(theme string) error {
 	INSERT OR REPLACE INTO preferences (key, value)
 	VALUES ('theme', ?)`
 	_, err := db.Exec(query, theme)
+	return err
+}
+
+// GetIdleThreshold retrieves the idle threshold preference (in minutes)
+func (db *DB) GetIdleThreshold() (int, error) {
+	var threshold string
+	err := db.QueryRow("SELECT value FROM preferences WHERE key = 'idle_threshold'").Scan(&threshold)
+	if err != nil {
+		return 5, err
+	}
+	var val int
+	_, err = fmt.Sscanf(threshold, "%d", &val)
+	if err != nil {
+		return 5, nil
+	}
+	return val, nil
+}
+
+// SetIdleThreshold saves the idle threshold preference
+func (db *DB) SetIdleThreshold(minutes int) error {
+	query := `
+	INSERT OR REPLACE INTO preferences (key, value)
+	VALUES ('idle_threshold', ?)`
+	_, err := db.Exec(query, fmt.Sprintf("%d", minutes))
 	return err
 }

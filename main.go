@@ -36,6 +36,9 @@ type App struct {
 	flatItems   []models.FlatListItem
 	currentTask *models.Task
 
+	idleThreshold int
+	idleSince     time.Time
+
 	// UI Components
 	timerLabel       *widget.Label
 	timerStop        chan struct{}
@@ -137,6 +140,7 @@ func (a *App) startTask(projectName, description string) {
 	}
 
 	a.currentTask = models.NewTask(projectName, description)
+	a.idleSince = time.Time{} // Reset idle timer
 	a.updateButtonsState(true)
 	a.timerLabel.SetText("Starting...")
 
@@ -167,6 +171,7 @@ func (a *App) stopTask() {
 	a.updateTaskGroups()
 
 	a.currentTask = nil
+	a.idleSince = time.Now()
 	a.updateButtonsState(false)
 
 	if a.taskList != nil {
@@ -185,6 +190,40 @@ func (a *App) stopTask() {
 	if a.recordingIcon != nil {
 		a.recordingIcon.Hide()
 	}
+}
+
+func (a *App) monitorIdle() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	lastNotified := time.Time{}
+
+	for {
+		select {
+		case <-ticker.C:
+			if a.checkIdle(&lastNotified) {
+				lastNotified = time.Now()
+			}
+		}
+	}
+}
+
+// checkIdle checks if the app is idle and sends a notification if needed.
+// Returns true if a notification was sent.
+func (a *App) checkIdle(lastNotified *time.Time) bool {
+	if a.currentTask == nil && !a.idleSince.IsZero() {
+		idleDuration := time.Since(a.idleSince)
+		threshold := time.Duration(a.idleThreshold) * time.Minute
+
+		if idleDuration >= threshold && time.Since(*lastNotified) >= threshold {
+			a.app.SendNotification(fyne.NewNotification(
+				"TrackYou",
+				fmt.Sprintf("You've been idle for %d minutes. Don't forget to start a task!", int(idleDuration.Minutes())),
+			))
+			return true
+		}
+	}
+	return false
 }
 
 func (a *App) updateButtonsState(running bool) {
@@ -206,6 +245,30 @@ func (a *App) updateButtonsState(running bool) {
 
 func (a *App) continueTask(task *models.Task) {
 	a.startTask(task.ProjectName, task.Description)
+}
+
+func (a *App) showSettings() {
+	thresholdEntry := widget.NewEntry()
+	thresholdEntry.SetText(fmt.Sprintf("%d", a.idleThreshold))
+
+	items := []*widget.FormItem{
+		widget.NewFormItem("Idle Threshold (min)", thresholdEntry),
+	}
+
+	dialog.ShowForm("Settings", "Save", "Cancel", items, func(confirmed bool) {
+		if confirmed {
+			var val int
+			_, err := fmt.Sscanf(thresholdEntry.Text, "%d", &val)
+			if err != nil || val < 1 {
+				a.showDialogError(fmt.Errorf("invalid threshold value"))
+				return
+			}
+			a.idleThreshold = val
+			if err := a.db.SetIdleThreshold(val); err != nil {
+				a.showDialogError(err)
+			}
+		}
+	}, a.window)
 }
 
 func (a *App) makeUI() fyne.CanvasObject {
@@ -386,13 +449,24 @@ func main() {
 		return
 	}
 
-	application := &App{
-		window:    window,
-		app:       myApp,
-		db:        db,
-		tasks:     make([]*models.Task, 0),
-		timerStop: make(chan struct{}),
+	// Load Idle Threshold
+	idleThreshold, err := db.GetIdleThreshold()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to load idle threshold: %v\n", err)
+		idleThreshold = 5
 	}
+
+	application := &App{
+		window:        window,
+		app:           myApp,
+		db:            db,
+		tasks:         make([]*models.Task, 0),
+		timerStop:     make(chan struct{}),
+		idleThreshold: idleThreshold,
+		idleSince:     time.Now(), // Assume idle from start
+	}
+
+	go application.monitorIdle()
 
 	// Load Theme
 	savedTheme, err := db.GetTheme()
@@ -420,12 +494,21 @@ func main() {
 	application.updateTaskGroups()
 
 	// --- Menu Construction ---
+	settingsMenu := fyne.NewMenu("File",
+		fyne.NewMenuItem("Settings", func() {
+			application.showSettings()
+		}),
+		fyne.NewMenuItemSeparator(),
+		fyne.NewMenuItem("Quit", func() {
+			myApp.Quit()
+		}),
+	)
 	helpMenu := fyne.NewMenu("Help",
 		fyne.NewMenuItem("About", func() {
 			ui.ShowAboutWindow(myApp, version, date, commit)
 		}),
 	)
-	mainMenu := fyne.NewMainMenu(helpMenu)
+	mainMenu := fyne.NewMainMenu(settingsMenu, helpMenu)
 	window.SetMainMenu(mainMenu)
 
 	window.SetContent(mainContent)

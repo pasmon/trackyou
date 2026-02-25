@@ -29,11 +29,13 @@ func setupTestApp(t *testing.T) (*App, func()) {
 	window := test.NewWindow(nil) // Content will be set by makeUI
 
 	app := &App{
-		window:    window,
-		app:       myApp,
-		db:        db,
-		tasks:     make([]*models.Task, 0),
-		timerStop: make(chan struct{}),
+		window:        window,
+		app:           myApp,
+		db:            db,
+		tasks:         make([]*models.Task, 0),
+		timerStop:     make(chan struct{}),
+		idleThreshold: 5,
+		idleSince:     time.Now(),
 	}
 
 	// Initialize UI
@@ -258,5 +260,64 @@ func TestIntegration_UIEvent_ContinueTask(t *testing.T) {
 	// Verify input fields updated
 	if app.projectEntry.Text != "Old Project" {
 		t.Errorf("expected entry text Old Project, got %s", app.projectEntry.Text)
+	}
+}
+
+func TestIntegration_IdleNotification(t *testing.T) {
+	app, cleanup := setupTestApp(t)
+	defer cleanup()
+
+	// Initial State: Idle Since Now
+	if app.idleSince.IsZero() {
+		t.Fatal("idleSince should be initialized")
+	}
+
+	// 1. Manually set idleSince to 6 minutes ago
+	app.idleThreshold = 5
+	app.idleSince = time.Now().Add(-6 * time.Minute)
+
+	lastNotified := time.Time{}
+	
+	// Trigger check
+	sent := app.checkIdle(&lastNotified)
+	if !sent {
+		t.Error("expected notification to be sent")
+	}
+
+	// 2. Test startTask resets idleSince
+	app.startTask("Project", "Desc")
+	if !app.idleSince.IsZero() {
+		t.Error("idleSince should be zero after starting a task")
+	}
+
+	// Test if stopTask sets idleSince
+	app.stopTask()
+	if app.idleSince.IsZero() {
+		t.Error("idleSince should be set after stopping a task")
+	}
+}
+
+func TestIntegration_Settings(t *testing.T) {
+	app, cleanup := setupTestApp(t)
+	defer cleanup()
+
+	// Initial threshold
+	if app.idleThreshold != 5 {
+		t.Errorf("expected default threshold 5, got %d", app.idleThreshold)
+	}
+
+	// Change threshold via showSettings (simulating form)
+	// Since showSettings uses a dialog, it's hard to test automatically without more effort.
+	// But we can test the database method directly and the app field.
+	
+	newThreshold := 10
+	err := app.db.SetIdleThreshold(newThreshold)
+	if err != nil {
+		t.Fatalf("failed to set threshold: %v", err)
+	}
+	
+	val, _ := app.db.GetIdleThreshold()
+	if val != newThreshold {
+		t.Errorf("expected threshold %d in db, got %d", newThreshold, val)
 	}
 }
