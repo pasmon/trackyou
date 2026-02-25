@@ -13,6 +13,10 @@ import (
 
 // setupTestApp creates an App instance with a temporary database and headless UI
 func setupTestApp(t *testing.T) (*App, func()) {
+	// Skip GUI in CI
+	oldVal := os.Getenv("FYNE_TEST_SKIP_GUI")
+	os.Setenv("FYNE_TEST_SKIP_GUI", "1")
+
 	// Create temp DB
 	dbPath := "test_integration_tasks.db"
 	db, err := database.NewDB(dbPath)
@@ -43,6 +47,7 @@ func setupTestApp(t *testing.T) (*App, func()) {
 	window.SetContent(content)
 
 	return app, func() {
+		os.Setenv("FYNE_TEST_SKIP_GUI", oldVal)
 		db.Close()
 		os.Remove(dbPath)
 		// window.Close() // Not strictly necessary in tests but good practice
@@ -130,7 +135,10 @@ func TestIntegration_ThemeSwitching(t *testing.T) {
 	defer cleanup()
 
 	// Initial State (Default is Light)
-	themeName, _ := app.db.GetTheme()
+	themeName, err := app.db.GetTheme()
+	if err != nil {
+		t.Fatalf("failed to get theme from db: %v", err)
+	}
 	if themeName != "light" {
 		t.Errorf("expected initial theme light, got %s", themeName)
 	}
@@ -139,7 +147,10 @@ func TestIntegration_ThemeSwitching(t *testing.T) {
 	app.toggleTheme(true)
 
 	// Verify DB Update
-	themeName, _ = app.db.GetTheme()
+	themeName, err = app.db.GetTheme()
+	if err != nil {
+		t.Fatalf("failed to get theme from db: %v", err)
+	}
 	if themeName != "dark" {
 		t.Errorf("expected theme dark after toggle, got %s", themeName)
 	}
@@ -148,7 +159,10 @@ func TestIntegration_ThemeSwitching(t *testing.T) {
 	app.toggleTheme(false)
 
 	// Verify DB Update
-	themeName, _ = app.db.GetTheme()
+	themeName, err = app.db.GetTheme()
+	if err != nil {
+		t.Fatalf("failed to get theme from db: %v", err)
+	}
 	if themeName != "light" {
 		t.Errorf("expected theme light after toggle, got %s", themeName)
 	}
@@ -164,11 +178,17 @@ func TestIntegration_DataPersistence(t *testing.T) {
 		if err != nil {
 			t.Fatalf("phase 1 setup failed: %v", err)
 		}
-		db.InitDB()
+		err = db.InitDB()
+		if err != nil {
+			t.Fatalf("phase 1 init db failed: %v", err)
+		}
 		
 		task := models.NewTask("Persisted Project", "Desc")
 		task.StopTask()
-		db.SaveTask(task)
+		err = db.SaveTask(task)
+		if err != nil {
+			t.Fatalf("phase 1 save task failed: %v", err)
+		}
 		db.Close()
 	}
 
@@ -231,8 +251,14 @@ func TestIntegration_UIEvent_ContinueTask(t *testing.T) {
 	oldTask := models.NewTask("Old Project", "Old Desc")
 	oldTask.StopTask()
 	
-	app.db.SaveTask(oldTask)
-	tasks, _ := app.db.GetTasks()
+	err := app.db.SaveTask(oldTask)
+	if err != nil {
+		t.Fatalf("failed to save task: %v", err)
+	}
+	tasks, err := app.db.GetTasks()
+	if err != nil {
+		t.Fatalf("failed to get tasks from db: %v", err)
+	}
 	app.tasks = tasks
 	app.updateTaskGroups()
 	
@@ -316,7 +342,10 @@ func TestIntegration_Settings(t *testing.T) {
 		t.Fatalf("failed to set threshold: %v", err)
 	}
 	
-	val, _ := app.db.GetIdleThreshold()
+	val, err := app.db.GetIdleThreshold()
+	if err != nil {
+		t.Fatalf("failed to get threshold from db: %v", err)
+	}
 	if val != newThreshold {
 		t.Errorf("expected threshold %d in db, got %d", newThreshold, val)
 	}
