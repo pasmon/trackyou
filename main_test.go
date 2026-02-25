@@ -13,6 +13,10 @@ import (
 
 // setupTestApp creates an App instance with a temporary database and headless UI
 func setupTestApp(t *testing.T) (*App, func()) {
+	// Skip GUI in CI
+	oldVal := os.Getenv("FYNE_TEST_SKIP_GUI")
+	os.Setenv("FYNE_TEST_SKIP_GUI", "1")
+
 	// Create temp DB
 	dbPath := "test_integration_tasks.db"
 	db, err := database.NewDB(dbPath)
@@ -29,11 +33,13 @@ func setupTestApp(t *testing.T) (*App, func()) {
 	window := test.NewWindow(nil) // Content will be set by makeUI
 
 	app := &App{
-		window:    window,
-		app:       myApp,
-		db:        db,
-		tasks:     make([]*models.Task, 0),
-		timerStop: make(chan struct{}),
+		window:        window,
+		app:           myApp,
+		db:            db,
+		tasks:         make([]*models.Task, 0),
+		timerStop:     make(chan struct{}),
+		idleThreshold: 5,
+		idleSince:     time.Now(),
 	}
 
 	// Initialize UI
@@ -41,6 +47,7 @@ func setupTestApp(t *testing.T) (*App, func()) {
 	window.SetContent(content)
 
 	return app, func() {
+		os.Setenv("FYNE_TEST_SKIP_GUI", oldVal)
 		db.Close()
 		os.Remove(dbPath)
 		// window.Close() // Not strictly necessary in tests but good practice
@@ -128,7 +135,10 @@ func TestIntegration_ThemeSwitching(t *testing.T) {
 	defer cleanup()
 
 	// Initial State (Default is Light)
-	themeName, _ := app.db.GetTheme()
+	themeName, err := app.db.GetTheme()
+	if err != nil {
+		t.Fatalf("failed to get theme from db: %v", err)
+	}
 	if themeName != "light" {
 		t.Errorf("expected initial theme light, got %s", themeName)
 	}
@@ -137,7 +147,10 @@ func TestIntegration_ThemeSwitching(t *testing.T) {
 	app.toggleTheme(true)
 
 	// Verify DB Update
-	themeName, _ = app.db.GetTheme()
+	themeName, err = app.db.GetTheme()
+	if err != nil {
+		t.Fatalf("failed to get theme from db: %v", err)
+	}
 	if themeName != "dark" {
 		t.Errorf("expected theme dark after toggle, got %s", themeName)
 	}
@@ -146,7 +159,10 @@ func TestIntegration_ThemeSwitching(t *testing.T) {
 	app.toggleTheme(false)
 
 	// Verify DB Update
-	themeName, _ = app.db.GetTheme()
+	themeName, err = app.db.GetTheme()
+	if err != nil {
+		t.Fatalf("failed to get theme from db: %v", err)
+	}
 	if themeName != "light" {
 		t.Errorf("expected theme light after toggle, got %s", themeName)
 	}
@@ -162,11 +178,17 @@ func TestIntegration_DataPersistence(t *testing.T) {
 		if err != nil {
 			t.Fatalf("phase 1 setup failed: %v", err)
 		}
-		db.InitDB()
+		err = db.InitDB()
+		if err != nil {
+			t.Fatalf("phase 1 init db failed: %v", err)
+		}
 		
 		task := models.NewTask("Persisted Project", "Desc")
 		task.StopTask()
-		db.SaveTask(task)
+		err = db.SaveTask(task)
+		if err != nil {
+			t.Fatalf("phase 1 save task failed: %v", err)
+		}
 		db.Close()
 	}
 
@@ -180,11 +202,13 @@ func TestIntegration_DataPersistence(t *testing.T) {
 		myApp := test.NewApp()
 		window := test.NewWindow(nil)
 		app := &App{
-			window:    window,
-			app:       myApp,
-			db:        db,
-			tasks:     make([]*models.Task, 0),
-			timerStop: make(chan struct{}),
+			window:        window,
+			app:           myApp,
+			db:            db,
+			tasks:         make([]*models.Task, 0),
+			timerStop:     make(chan struct{}),
+			idleThreshold: 5,
+			idleSince:     time.Now(),
 		}
 		
 		// Simulate loading tasks as main() does
@@ -229,8 +253,14 @@ func TestIntegration_UIEvent_ContinueTask(t *testing.T) {
 	oldTask := models.NewTask("Old Project", "Old Desc")
 	oldTask.StopTask()
 	
-	app.db.SaveTask(oldTask)
-	tasks, _ := app.db.GetTasks()
+	err := app.db.SaveTask(oldTask)
+	if err != nil {
+		t.Fatalf("failed to save task: %v", err)
+	}
+	tasks, err := app.db.GetTasks()
+	if err != nil {
+		t.Fatalf("failed to get tasks from db: %v", err)
+	}
 	app.tasks = tasks
 	app.updateTaskGroups()
 	
@@ -258,5 +288,67 @@ func TestIntegration_UIEvent_ContinueTask(t *testing.T) {
 	// Verify input fields updated
 	if app.projectEntry.Text != "Old Project" {
 		t.Errorf("expected entry text Old Project, got %s", app.projectEntry.Text)
+	}
+}
+
+func TestIntegration_IdleNotification(t *testing.T) {
+	app, cleanup := setupTestApp(t)
+	defer cleanup()
+
+	// Initial State: Idle Since Now
+	if app.idleSince.IsZero() {
+		t.Fatal("idleSince should be initialized")
+	}
+
+	// 1. Manually set idleSince to 6 minutes ago
+	app.idleThreshold = 5
+	app.idleSince = time.Now().Add(-6 * time.Minute)
+
+	lastNotified := time.Time{}
+	
+	// Trigger check
+	sent := app.checkIdle(&lastNotified)
+	if !sent {
+		t.Error("expected notification to be sent")
+	}
+
+	// 2. Test startTask resets idleSince
+	app.startTask("Project", "Desc")
+	if !app.idleSince.IsZero() {
+		t.Error("idleSince should be zero after starting a task")
+	}
+
+	// Test if stopTask sets idleSince
+	app.stopTask()
+	if app.idleSince.IsZero() {
+		t.Error("idleSince should be set after stopping a task")
+	}
+}
+
+func TestIntegration_Settings(t *testing.T) {
+	app, cleanup := setupTestApp(t)
+	defer cleanup()
+
+	// Initial threshold
+	if app.idleThreshold != 5 {
+		t.Errorf("expected default threshold 5, got %d", app.idleThreshold)
+	}
+
+	// Change threshold via showSettings (simulating form)
+	// Since showSettings uses a dialog, it's hard to test automatically without more effort.
+	// But we can test the database method directly and the app field.
+	
+	newThreshold := 10
+	err := app.db.SetIdleThreshold(newThreshold)
+	if err != nil {
+		t.Fatalf("failed to set threshold: %v", err)
+	}
+	
+	val, err := app.db.GetIdleThreshold()
+	if err != nil {
+		t.Fatalf("failed to get threshold from db: %v", err)
+	}
+	if val != newThreshold {
+		t.Errorf("expected threshold %d in db, got %d", newThreshold, val)
 	}
 }
