@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image/color"
 	"os"
+	"sync"
 	"time"
 
 	"trackyou/database"
@@ -36,6 +37,7 @@ type App struct {
 	flatItems   []models.FlatListItem
 	currentTask *models.Task
 
+	mu            sync.RWMutex
 	idleThreshold int
 	idleSince     time.Time
 
@@ -62,8 +64,11 @@ func (a *App) updateTimer() {
 	for {
 		select {
 		case <-ticker.C:
-			if a.currentTask != nil {
-				duration := time.Since(a.currentTask.StartTime)
+			a.mu.RLock()
+			task := a.currentTask
+			a.mu.RUnlock()
+			if task != nil {
+				duration := time.Since(task.StartTime)
 				blink = !blink
 				fyne.Do(func() {
 					a.timerLabel.SetText(fmt.Sprintf("%v", duration.Round(time.Second)))
@@ -127,7 +132,9 @@ func (a *App) getTask(id widget.ListItemID) *models.Task {
 }
 
 func (a *App) startTask(projectName, description string) {
+	a.mu.Lock()
 	if a.currentTask != nil {
+		a.mu.Unlock()
 		if os.Getenv("FYNE_TEST_SKIP_GUI") == "" {
 			dialog.ShowInformation("Error", "A task is already running", a.window)
 		}
@@ -135,12 +142,15 @@ func (a *App) startTask(projectName, description string) {
 	}
 
 	if projectName == "" {
+		a.mu.Unlock()
 		a.showDialogError(fmt.Errorf("project name is required"))
 		return
 	}
 
 	a.currentTask = models.NewTask(projectName, description)
-	a.idleSince = time.Time{} // Reset idle timer
+	a.idleSince = time.Time{}
+	a.mu.Unlock()
+
 	a.updateButtonsState(true)
 	a.timerLabel.SetText("Starting...")
 
@@ -156,22 +166,27 @@ func (a *App) startTask(projectName, description string) {
 }
 
 func (a *App) stopTask() {
+	a.mu.Lock()
 	if a.currentTask == nil {
+		a.mu.Unlock()
 		return
 	}
 
 	a.currentTask.StopTask()
-	if err := a.db.SaveTask(a.currentTask); err != nil {
+	task := a.currentTask
+	a.currentTask = nil
+	a.idleSince = time.Now()
+	a.mu.Unlock()
+
+	if err := a.db.SaveTask(task); err != nil {
 		a.showDialogError(err)
 		return
 	}
 
 	// Prepend
-	a.tasks = append([]*models.Task{a.currentTask}, a.tasks...)
+	a.tasks = append([]*models.Task{task}, a.tasks...)
 	a.updateTaskGroups()
 
-	a.currentTask = nil
-	a.idleSince = time.Now()
 	a.updateButtonsState(false)
 
 	if a.taskList != nil {
@@ -211,9 +226,14 @@ func (a *App) monitorIdle() {
 // checkIdle checks if the app is idle and sends a notification if needed.
 // Returns true if a notification was sent.
 func (a *App) checkIdle(lastNotified *time.Time) bool {
-	if a.currentTask == nil && !a.idleSince.IsZero() {
-		idleDuration := time.Since(a.idleSince)
-		threshold := time.Duration(a.idleThreshold) * time.Minute
+	a.mu.RLock()
+	task := a.currentTask
+	idleSince := a.idleSince
+	threshold := time.Duration(a.idleThreshold) * time.Minute
+	a.mu.RUnlock()
+
+	if task == nil && !idleSince.IsZero() {
+		idleDuration := time.Since(idleSince)
 
 		if idleDuration >= threshold && time.Since(*lastNotified) >= threshold {
 			a.app.SendNotification(fyne.NewNotification(
@@ -248,8 +268,12 @@ func (a *App) continueTask(task *models.Task) {
 }
 
 func (a *App) showSettings() {
+	a.mu.RLock()
+	currentThreshold := a.idleThreshold
+	a.mu.RUnlock()
+
 	thresholdEntry := widget.NewEntry()
-	thresholdEntry.SetText(fmt.Sprintf("%d", a.idleThreshold))
+	thresholdEntry.SetText(fmt.Sprintf("%d", currentThreshold))
 
 	items := []*widget.FormItem{
 		widget.NewFormItem("Idle Threshold (min)", thresholdEntry),
@@ -263,7 +287,9 @@ func (a *App) showSettings() {
 				a.showDialogError(fmt.Errorf("invalid threshold value"))
 				return
 			}
+			a.mu.Lock()
 			a.idleThreshold = val
+			a.mu.Unlock()
 			if err := a.db.SetIdleThreshold(val); err != nil {
 				a.showDialogError(err)
 			}

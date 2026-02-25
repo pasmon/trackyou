@@ -178,11 +178,14 @@ func (db *DB) GetIdleThreshold() (int, error) {
 	var threshold string
 	err := db.QueryRow("SELECT value FROM preferences WHERE key = 'idle_threshold'").Scan(&threshold)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return 5, nil
+		}
 		return 5, err
 	}
 	var val int
 	_, err = fmt.Sscanf(threshold, "%d", &val)
-	if err != nil {
+	if err != nil || val < 1 {
 		return 5, nil
 	}
 	return val, nil
@@ -190,6 +193,9 @@ func (db *DB) GetIdleThreshold() (int, error) {
 
 // SetIdleThreshold saves the idle threshold preference
 func (db *DB) SetIdleThreshold(minutes int) error {
+	if minutes < 1 {
+		return fmt.Errorf("idle threshold must be >= 1")
+	}
 	query := `
 	INSERT OR REPLACE INTO preferences (key, value)
 	VALUES ('idle_threshold', ?)`
