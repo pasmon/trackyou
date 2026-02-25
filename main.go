@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"image/color"
 	"os"
+	"strconv"
+	"sync"
 	"time"
 
 	"trackyou/database"
@@ -36,6 +39,12 @@ type App struct {
 	flatItems   []models.FlatListItem
 	currentTask *models.Task
 
+	mu            sync.RWMutex
+	idleThreshold int
+	idleSince     time.Time
+	idleCtx       context.Context
+	idleCancel    context.CancelFunc
+
 	// UI Components
 	timerLabel       *widget.Label
 	timerStop        chan struct{}
@@ -59,8 +68,11 @@ func (a *App) updateTimer() {
 	for {
 		select {
 		case <-ticker.C:
-			if a.currentTask != nil {
-				duration := time.Since(a.currentTask.StartTime)
+			a.mu.RLock()
+			task := a.currentTask
+			a.mu.RUnlock()
+			if task != nil {
+				duration := time.Since(task.StartTime)
 				blink = !blink
 				fyne.Do(func() {
 					a.timerLabel.SetText(fmt.Sprintf("%v", duration.Round(time.Second)))
@@ -124,7 +136,9 @@ func (a *App) getTask(id widget.ListItemID) *models.Task {
 }
 
 func (a *App) startTask(projectName, description string) {
+	a.mu.Lock()
 	if a.currentTask != nil {
+		a.mu.Unlock()
 		if os.Getenv("FYNE_TEST_SKIP_GUI") == "" {
 			dialog.ShowInformation("Error", "A task is already running", a.window)
 		}
@@ -132,11 +146,15 @@ func (a *App) startTask(projectName, description string) {
 	}
 
 	if projectName == "" {
+		a.mu.Unlock()
 		a.showDialogError(fmt.Errorf("project name is required"))
 		return
 	}
 
 	a.currentTask = models.NewTask(projectName, description)
+	a.idleSince = time.Time{}
+	a.mu.Unlock()
+
 	a.updateButtonsState(true)
 	a.timerLabel.SetText("Starting...")
 
@@ -152,21 +170,27 @@ func (a *App) startTask(projectName, description string) {
 }
 
 func (a *App) stopTask() {
+	a.mu.Lock()
 	if a.currentTask == nil {
+		a.mu.Unlock()
 		return
 	}
 
 	a.currentTask.StopTask()
-	if err := a.db.SaveTask(a.currentTask); err != nil {
+	task := a.currentTask
+	a.currentTask = nil
+	a.idleSince = time.Now()
+	a.mu.Unlock()
+
+	if err := a.db.SaveTask(task); err != nil {
 		a.showDialogError(err)
 		return
 	}
 
 	// Prepend
-	a.tasks = append([]*models.Task{a.currentTask}, a.tasks...)
+	a.tasks = append([]*models.Task{task}, a.tasks...)
 	a.updateTaskGroups()
 
-	a.currentTask = nil
 	a.updateButtonsState(false)
 
 	if a.taskList != nil {
@@ -185,6 +209,52 @@ func (a *App) stopTask() {
 	if a.recordingIcon != nil {
 		a.recordingIcon.Hide()
 	}
+}
+
+func (a *App) monitorIdle(ctx context.Context) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	lastNotified := time.Time{}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if a.checkIdle(&lastNotified) {
+				lastNotified = time.Now()
+			}
+		}
+	}
+}
+
+// checkIdle checks if the app is idle and sends a notification if needed.
+// Returns true if a notification was sent.
+func (a *App) checkIdle(lastNotified *time.Time) bool {
+	a.mu.RLock()
+	task := a.currentTask
+	idleSince := a.idleSince
+	threshold := time.Duration(a.idleThreshold) * time.Minute
+	a.mu.RUnlock()
+
+	if task == nil && !idleSince.IsZero() {
+		idleDuration := time.Since(idleSince)
+
+		rearmInterval := threshold
+		if rearmInterval < 5*time.Minute {
+			rearmInterval = 5 * time.Minute
+		}
+
+		if idleDuration >= threshold && time.Since(*lastNotified) >= rearmInterval {
+			a.app.SendNotification(fyne.NewNotification(
+				"TrackYou",
+				fmt.Sprintf("You've been idle for %d minutes. Don't forget to start a task!", int(idleDuration.Minutes())),
+			))
+			return true
+		}
+	}
+	return false
 }
 
 func (a *App) updateButtonsState(running bool) {
@@ -206,6 +276,35 @@ func (a *App) updateButtonsState(running bool) {
 
 func (a *App) continueTask(task *models.Task) {
 	a.startTask(task.ProjectName, task.Description)
+}
+
+func (a *App) showSettings() {
+	a.mu.RLock()
+	currentThreshold := a.idleThreshold
+	a.mu.RUnlock()
+
+	thresholdEntry := widget.NewEntry()
+	thresholdEntry.SetText(fmt.Sprintf("%d", currentThreshold))
+
+	items := []*widget.FormItem{
+		widget.NewFormItem("Idle Threshold (min)", thresholdEntry),
+	}
+
+	dialog.ShowForm("Settings", "Save", "Cancel", items, func(confirmed bool) {
+		if confirmed {
+			val, err := strconv.Atoi(thresholdEntry.Text)
+			if err != nil || val < 1 {
+				a.showDialogError(fmt.Errorf("invalid threshold value"))
+				return
+			}
+			a.mu.Lock()
+			a.idleThreshold = val
+			a.mu.Unlock()
+			if err := a.db.SetIdleThreshold(val); err != nil {
+				a.showDialogError(err)
+			}
+		}
+	}, a.window)
 }
 
 func (a *App) makeUI() fyne.CanvasObject {
@@ -386,13 +485,28 @@ func main() {
 		return
 	}
 
-	application := &App{
-		window:    window,
-		app:       myApp,
-		db:        db,
-		tasks:     make([]*models.Task, 0),
-		timerStop: make(chan struct{}),
+	// Load Idle Threshold
+	idleThreshold, err := db.GetIdleThreshold()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to load idle threshold: %v\n", err)
+		idleThreshold = 5
 	}
+
+	idleCtx, idleCancel := context.WithCancel(context.Background())
+
+	application := &App{
+		window:        window,
+		app:           myApp,
+		db:            db,
+		tasks:         make([]*models.Task, 0),
+		timerStop:     make(chan struct{}),
+		idleThreshold: idleThreshold,
+		idleSince:     time.Now(), // Assume idle from start
+		idleCtx:       idleCtx,
+		idleCancel:    idleCancel,
+	}
+
+	go application.monitorIdle(idleCtx)
 
 	// Load Theme
 	savedTheme, err := db.GetTheme()
@@ -420,15 +534,26 @@ func main() {
 	application.updateTaskGroups()
 
 	// --- Menu Construction ---
+	settingsMenu := fyne.NewMenu("File",
+		fyne.NewMenuItem("Settings", func() {
+			application.showSettings()
+		}),
+		fyne.NewMenuItemSeparator(),
+		fyne.NewMenuItem("Quit", func() {
+			application.idleCancel()
+			myApp.Quit()
+		}),
+	)
 	helpMenu := fyne.NewMenu("Help",
 		fyne.NewMenuItem("About", func() {
 			ui.ShowAboutWindow(myApp, version, date, commit)
 		}),
 	)
-	mainMenu := fyne.NewMainMenu(helpMenu)
+	mainMenu := fyne.NewMainMenu(settingsMenu, helpMenu)
 	window.SetMainMenu(mainMenu)
 
 	window.SetContent(mainContent)
 	window.Resize(fyne.NewSize(500, 700)) // Portrait mobile-ish size
 	window.ShowAndRun()
+	application.idleCancel()
 }
