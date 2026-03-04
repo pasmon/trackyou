@@ -45,6 +45,25 @@ func TestStopTask(t *testing.T) {
 	}
 }
 
+func TestStopTaskWithClockRollback(t *testing.T) {
+	task := NewTask("Test", "Test")
+	// Set StartTime to be in the future (simulating a clock rollback)
+	task.StartTime = time.Now().Add(10 * time.Minute)
+	task.StopTask()
+
+	if task.EndTime.IsZero() {
+		t.Error("expected EndTime to be set")
+	}
+	
+	if task.Duration < 0 {
+		t.Errorf("expected duration to be at least 0, got %v", task.Duration)
+	}
+	
+	if task.Duration != 0 {
+		t.Errorf("expected duration 0 due to clock rollback, got %v", task.Duration)
+	}
+}
+
 func TestUpdateDuration(t *testing.T) {
 	task := NewTask("Test", "Test")
 	task.StartTime = time.Now().Add(-5 * time.Minute)
@@ -54,5 +73,17 @@ func TestUpdateDuration(t *testing.T) {
 	expectedDuration := task.EndTime.Sub(task.StartTime)
 	if task.Duration != expectedDuration {
 		t.Errorf("expected duration %v, got %v", expectedDuration, task.Duration)
+	}
+}
+
+func TestUpdateDurationWithClockRollback(t *testing.T) {
+	task := NewTask("Test", "Test")
+	// Simulate rollback: StartTime is after EndTime
+	task.EndTime = time.Now()
+	task.StartTime = task.EndTime.Add(5 * time.Minute)
+	task.UpdateDuration()
+
+	if task.Duration != 0 {
+		t.Errorf("expected duration 0 due to clock rollback, got %v", task.Duration)
 	}
 }

@@ -27,10 +27,18 @@ func NewTask(projectName, description string) *Task {
 // StopTask marks the task as completed and calculates the duration
 func (t *Task) StopTask() {
 	t.EndTime = time.Now().Round(0)
-	t.Duration = t.EndTime.Sub(t.StartTime)
+	d := t.EndTime.Sub(t.StartTime)
+	if d < 0 {
+		d = 0
+	}
+	t.Duration = d
 }
 
 // UpdateDuration updates the task duration based on start and end times
 func (t *Task) UpdateDuration() {
-	t.Duration = t.EndTime.Sub(t.StartTime)
+	d := t.EndTime.Sub(t.StartTime)
+	if d < 0 {
+		d = 0
+	}
+	t.Duration = d
 }
