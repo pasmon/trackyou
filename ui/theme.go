@@ -8,7 +8,8 @@ import (
 )
 
 type materialTheme struct {
-	variant fyne.ThemeVariant
+	variant      fyne.ThemeVariant
+	followSystem bool
 }
 
 var _ fyne.Theme = (*materialTheme)(nil)
@@ -16,12 +17,20 @@ var _ fyne.Theme = (*materialTheme)(nil)
 // NewMaterialTheme creates a new custom material design theme
 // variant: theme.VariantLight or theme.VariantDark.
 func NewMaterialTheme(variant fyne.ThemeVariant) fyne.Theme {
-	return &materialTheme{variant: variant}
+	return &materialTheme{variant: variant, followSystem: false}
 }
 
-func (t *materialTheme) Color(name fyne.ThemeColorName, _ fyne.ThemeVariant) color.Color {
-	// Force the variant based on initialization
-	isDark := t.variant == theme.VariantDark
+// NewMaterialThemeSystem creates a new custom material design theme that follows the system variant
+func NewMaterialThemeSystem() fyne.Theme {
+	return &materialTheme{followSystem: true}
+}
+
+func (t *materialTheme) Color(name fyne.ThemeColorName, v fyne.ThemeVariant) color.Color {
+	// Force the variant based on initialization or use provided variant if followSystem is true
+	isDark := v == theme.VariantDark
+	if !t.followSystem {
+		isDark = t.variant == theme.VariantDark
+	}
 
 	switch name {
 	case theme.ColorNameBackground:

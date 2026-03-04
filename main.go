@@ -98,22 +98,19 @@ func (a *App) showDialogError(err error) {
 	dialog.ShowError(err, a.window)
 }
 
-func (a *App) toggleTheme(isDark bool) {
-	if isDark {
+func (a *App) applyTheme(themeName string) {
+	switch themeName {
+	case "dark":
 		a.app.Settings().SetTheme(ui.NewMaterialTheme(theme.VariantDark))
-	} else {
+	case "system":
+		a.app.Settings().SetTheme(ui.NewMaterialThemeSystem())
+	default: // "light"
 		a.app.Settings().SetTheme(ui.NewMaterialTheme(theme.VariantLight))
 	}
-	if err := a.db.SetTheme(themeName(isDark)); err != nil {
+
+	if err := a.db.SetTheme(themeName); err != nil {
 		a.showDialogError(err)
 	}
-}
-
-func themeName(isDark bool) string {
-	if isDark {
-		return "dark"
-	}
-	return "light"
 }
 
 func (a *App) getTaskItem(id widget.ListItemID) (title, subtitle string, itemType models.ItemType) {
@@ -286,12 +283,26 @@ func (a *App) showSettings() {
 	thresholdEntry := widget.NewEntry()
 	thresholdEntry.SetText(fmt.Sprintf("%d", currentThreshold))
 
+	currentTheme, _ := a.db.GetTheme()
+	themeSelect := widget.NewSelect([]string{"Light", "Dark", "System"}, nil)
+	// Capitalize for display, lower case for storage
+	themeDisplay := "Light"
+	switch currentTheme {
+	case "dark":
+		themeDisplay = "Dark"
+	case "system":
+		themeDisplay = "System"
+	}
+	themeSelect.SetSelected(themeDisplay)
+
 	items := []*widget.FormItem{
 		widget.NewFormItem("Idle Threshold (min)", thresholdEntry),
+		widget.NewFormItem("Theme", themeSelect),
 	}
 
 	dialog.ShowForm("Settings", "Save", "Cancel", items, func(confirmed bool) {
 		if confirmed {
+			// Update Threshold
 			val, err := strconv.Atoi(thresholdEntry.Text)
 			if err != nil || val < 1 {
 				a.showDialogError(fmt.Errorf("invalid threshold value"))
@@ -303,20 +314,23 @@ func (a *App) showSettings() {
 			if err := a.db.SetIdleThreshold(val); err != nil {
 				a.showDialogError(err)
 			}
+
+			// Update Theme
+			newTheme := "light"
+			switch themeSelect.Selected {
+			case "Dark":
+				newTheme = "dark"
+			case "System":
+				newTheme = "system"
+			}
+			a.applyTheme(newTheme)
 		}
 	}, a.window)
 }
 
 func (a *App) makeUI() fyne.CanvasObject {
-	// Top Bar: Theme Toggle
-	themeCheck := widget.NewCheck("Dark Mode", func(checked bool) {
-		a.toggleTheme(checked)
-	})
-	// Initialize check state based on current theme
-	currentTheme, _ := a.db.GetTheme()
-	themeCheck.SetChecked(currentTheme == "dark")
-
-	topBar := container.NewHBox(layout.NewSpacer(), themeCheck)
+	// Top Bar: Spacer (maybe for future components)
+	topBar := container.NewHBox(layout.NewSpacer())
 
 	// Input Area
 	a.projectEntry = widget.NewEntry()
@@ -512,14 +526,9 @@ func main() {
 	savedTheme, err := db.GetTheme()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to load theme preference: %v\n", err)
-		return
+		savedTheme = "light"
 	}
-	isDark := savedTheme == "dark"
-	if isDark {
-		myApp.Settings().SetTheme(ui.NewMaterialTheme(theme.VariantDark))
-	} else {
-		myApp.Settings().SetTheme(ui.NewMaterialTheme(theme.VariantLight))
-	}
+	application.applyTheme(savedTheme)
 
 	// --- UI Construction ---
 	mainContent := application.makeUI()
