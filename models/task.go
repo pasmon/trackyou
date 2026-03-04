@@ -14,7 +14,7 @@ type Task struct {
 
 // NewTask creates a new task with the current time as start time
 func NewTask(projectName, description string) *Task {
-	now := time.Now()
+	now := time.Now().Round(0)
 	return &Task{
 		ProjectName: projectName,
 		Description: description,
@@ -26,7 +26,7 @@ func NewTask(projectName, description string) *Task {
 
 // StopTask marks the task as completed and calculates the duration
 func (t *Task) StopTask() {
-	t.EndTime = time.Now()
+	t.EndTime = time.Now().Round(0)
 	t.Duration = t.EndTime.Sub(t.StartTime)
 }
 
