@@ -179,7 +179,7 @@ func (a *App) stopTask() {
 	a.currentTask.StopTask()
 	task := a.currentTask
 	a.currentTask = nil
-	a.idleSince = time.Now()
+	a.idleSince = time.Now().Round(0)
 	a.mu.Unlock()
 
 	if err := a.db.SaveTask(task); err != nil {
@@ -223,7 +223,7 @@ func (a *App) monitorIdle(ctx context.Context) {
 			return
 		case <-ticker.C:
 			if a.checkIdle(&lastNotified) {
-				lastNotified = time.Now()
+				lastNotified = time.Now().Round(0)
 			}
 		}
 	}
@@ -501,7 +501,7 @@ func main() {
 		tasks:         make([]*models.Task, 0),
 		timerStop:     make(chan struct{}),
 		idleThreshold: idleThreshold,
-		idleSince:     time.Now(), // Assume idle from start
+		idleSince:     time.Now().Round(0), // Assume idle from start
 		idleCtx:       idleCtx,
 		idleCancel:    idleCancel,
 	}
