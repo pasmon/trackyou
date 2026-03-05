@@ -98,8 +98,19 @@ func (a *App) showDialogError(err error) {
 	dialog.ShowError(err, a.window)
 }
 
-func (a *App) applyTheme(themeName string) {
+func (a *App) normalizeTheme(themeName string) string {
 	switch themeName {
+	case "dark", "system":
+		return themeName
+	default:
+		return "light"
+	}
+}
+
+func (a *App) applyTheme(themeName string) {
+	normalizedTheme := a.normalizeTheme(themeName)
+
+	switch normalizedTheme {
 	case "dark":
 		a.app.Settings().SetTheme(ui.NewMaterialTheme(theme.VariantDark))
 	case "system":
@@ -108,7 +119,7 @@ func (a *App) applyTheme(themeName string) {
 		a.app.Settings().SetTheme(ui.NewMaterialTheme(theme.VariantLight))
 	}
 
-	if err := a.db.SetTheme(themeName); err != nil {
+	if err := a.db.SetTheme(normalizedTheme); err != nil {
 		a.showDialogError(err)
 	}
 }

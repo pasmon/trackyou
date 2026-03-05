@@ -83,7 +83,12 @@ func (t *materialTheme) Color(name fyne.ThemeColorName, v fyne.ThemeVariant) col
 		return color.RGBA{R: 0xE5, G: 0xE5, B: 0xE5, A: 0xFF}
 	}
 
-	return theme.DefaultTheme().Color(name, t.variant)
+	variant := t.variant
+	if t.followSystem {
+		variant = v
+	}
+
+	return theme.DefaultTheme().Color(name, variant)
 }
 
 func (t *materialTheme) Font(style fyne.TextStyle) fyne.Resource {

@@ -364,3 +364,21 @@ func TestIntegration_Settings(t *testing.T) {
 		t.Errorf("expected threshold %d in db, got %d", newThreshold, val)
 	}
 }
+
+func TestIntegration_NormalizeTheme(t *testing.T) {
+	app, cleanup := setupTestApp(t)
+	defer cleanup()
+
+	// Apply an invalid theme
+	app.applyTheme("invalid")
+
+	// Check if "light" (default) was persisted to DB instead of "invalid"
+	persisted, err := app.db.GetTheme()
+	if err != nil {
+		t.Fatalf("failed to get theme: %v", err)
+	}
+
+	if persisted != "light" {
+		t.Errorf("expected light theme for invalid input, but got %q persisted in DB", persisted)
+	}
+}
