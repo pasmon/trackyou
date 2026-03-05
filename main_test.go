@@ -144,7 +144,7 @@ func TestIntegration_ThemeSwitching(t *testing.T) {
 	}
 
 	// Switch to Dark
-	app.toggleTheme(true)
+	app.applyTheme("dark")
 
 	// Verify DB Update
 	themeName, err = app.db.GetTheme()
@@ -155,8 +155,20 @@ func TestIntegration_ThemeSwitching(t *testing.T) {
 		t.Errorf("expected theme dark after toggle, got %s", themeName)
 	}
 
+	// Switch to System
+	app.applyTheme("system")
+
+	// Verify DB Update
+	themeName, err = app.db.GetTheme()
+	if err != nil {
+		t.Fatalf("failed to get theme from db: %v", err)
+	}
+	if themeName != "system" {
+		t.Errorf("expected theme system after toggle, got %s", themeName)
+	}
+
 	// Switch back to Light
-	app.toggleTheme(false)
+	app.applyTheme("light")
 
 	// Verify DB Update
 	themeName, err = app.db.GetTheme()
@@ -350,5 +362,23 @@ func TestIntegration_Settings(t *testing.T) {
 	}
 	if val != newThreshold {
 		t.Errorf("expected threshold %d in db, got %d", newThreshold, val)
+	}
+}
+
+func TestIntegration_NormalizeTheme(t *testing.T) {
+	app, cleanup := setupTestApp(t)
+	defer cleanup()
+
+	// Apply an invalid theme
+	app.applyTheme("invalid")
+
+	// Check if "light" (default) was persisted to DB instead of "invalid"
+	persisted, err := app.db.GetTheme()
+	if err != nil {
+		t.Fatalf("failed to get theme: %v", err)
+	}
+
+	if persisted != "light" {
+		t.Errorf("expected light theme for invalid input, but got %q persisted in DB", persisted)
 	}
 }

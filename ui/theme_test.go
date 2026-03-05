@@ -5,19 +5,23 @@ import (
 	"testing"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/theme"
 )
 
 func TestMaterialTheme_Color(t *testing.T) {
+	test.NewApp()
+
 	darkTheme := NewMaterialTheme(theme.VariantDark)
 	lightTheme := NewMaterialTheme(theme.VariantLight)
+	systemTheme := NewMaterialThemeSystem()
 
 	tests := []struct {
 		name     string
 		thm      fyne.Theme
 		colorKey fyne.ThemeColorName
 		variant  fyne.ThemeVariant
-		want     color.RGBA
+		want     color.Color
 	}{
 		{
 			name:     "Dark Mode Disabled Text",
@@ -39,6 +43,34 @@ func TestMaterialTheme_Color(t *testing.T) {
 			colorKey: theme.ColorNameDisabledButton,
 			variant:  theme.VariantDark,
 			want:     color.RGBA{R: 0x42, G: 0x42, B: 0x42, A: 0xFF},
+		},
+		{
+			name:     "System Theme (Dark Variant) Disabled Text",
+			thm:      systemTheme,
+			colorKey: theme.ColorNameDisabled,
+			variant:  theme.VariantDark,
+			want:     color.RGBA{R: 0xAB, G: 0xAB, B: 0xAB, A: 0xFF},
+		},
+		{
+			name:     "System Theme (Light Variant) Disabled Text",
+			thm:      systemTheme,
+			colorKey: theme.ColorNameDisabled,
+			variant:  theme.VariantLight,
+			want:     color.RGBA{R: 0xAD, G: 0xAD, B: 0xAD, A: 0xFF},
+		},
+		{
+			name:     "System Theme (Light Variant) Fallback Shadow",
+			thm:      systemTheme,
+			colorKey: theme.ColorNameShadow,
+			variant:  theme.VariantLight,
+			want:     theme.DefaultTheme().Color(theme.ColorNameShadow, theme.VariantLight),
+		},
+		{
+			name:     "System Theme (Dark Variant) Fallback Shadow",
+			thm:      systemTheme,
+			colorKey: theme.ColorNameShadow,
+			variant:  theme.VariantDark,
+			want:     theme.DefaultTheme().Color(theme.ColorNameShadow, theme.VariantDark),
 		},
 	}
 
