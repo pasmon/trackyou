@@ -18,6 +18,7 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -45,8 +46,13 @@ type App struct {
 	idleCtx       context.Context
 	idleCancel    context.CancelFunc
 
+	workdayLength    float64
+	goalReachedToday bool
+	desk             desktop.App
+
 	// UI Components
 	timerLabel       *widget.Label
+	totalLabel       *widget.Label
 	timerStop        chan struct{}
 	projectEntry     *widget.Entry
 	descriptionEntry *widget.Entry
@@ -60,6 +66,27 @@ func (a *App) updateTaskGroups() {
 	a.flatItems = models.FlattenTaskGroups(a.taskGroups)
 }
 
+func (a *App) calculateTotalDurationToday() time.Duration {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	var total time.Duration
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+
+	for _, t := range a.tasks {
+		if t.StartTime.After(today) {
+			total += t.Duration
+		}
+	}
+
+	if a.currentTask != nil {
+		total += time.Since(a.currentTask.StartTime)
+	}
+
+	return total
+}
+
 func (a *App) updateTimer() {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
@@ -70,11 +97,16 @@ func (a *App) updateTimer() {
 		case <-ticker.C:
 			a.mu.RLock()
 			task := a.currentTask
+			goal := a.workdayLength
+			reached := a.goalReachedToday
 			a.mu.RUnlock()
-			if task != nil {
-				duration := time.Since(task.StartTime)
-				blink = !blink
-				fyne.Do(func() {
+
+			total := a.calculateTotalDurationToday()
+
+			fyne.Do(func() {
+				if task != nil {
+					duration := time.Since(task.StartTime)
+					blink = !blink
 					a.timerLabel.SetText(fmt.Sprintf("%v", duration.Round(time.Second)))
 					if blink {
 						a.recordingIcon.FillColor = color.RGBA{R: 255, G: 0, B: 0, A: 255}
@@ -82,8 +114,27 @@ func (a *App) updateTimer() {
 						a.recordingIcon.FillColor = color.RGBA{R: 255, G: 0, B: 0, A: 100}
 					}
 					a.recordingIcon.Refresh()
-				})
-			}
+				}
+
+				// Update total today
+				totalText := fmt.Sprintf("Total Today: %v / %.1fh", total.Round(time.Second), goal)
+				if total.Hours() >= goal {
+					a.totalLabel.SetText("✅ " + totalText)
+					if !reached {
+						a.mu.Lock()
+						a.goalReachedToday = true
+						a.mu.Unlock()
+
+						a.app.SendNotification(fyne.NewNotification(
+							"Goal Reached!",
+							fmt.Sprintf("You've completed your %.1f hour workday goal!", goal),
+						))
+						a.window.RequestFocus()
+					}
+				} else {
+					a.totalLabel.SetText(totalText)
+				}
+			})
 		case <-a.timerStop:
 			return
 		}
@@ -289,10 +340,14 @@ func (a *App) continueTask(task *models.Task) {
 func (a *App) showSettings() {
 	a.mu.RLock()
 	currentThreshold := a.idleThreshold
+	currentGoal := a.workdayLength
 	a.mu.RUnlock()
 
 	thresholdEntry := widget.NewEntry()
 	thresholdEntry.SetText(fmt.Sprintf("%d", currentThreshold))
+
+	goalEntry := widget.NewEntry()
+	goalEntry.SetText(fmt.Sprintf("%.1f", currentGoal))
 
 	currentTheme, _ := a.db.GetTheme()
 	themeSelect := widget.NewSelect([]string{"Light", "Dark", "System"}, nil)
@@ -308,6 +363,7 @@ func (a *App) showSettings() {
 
 	items := []*widget.FormItem{
 		widget.NewFormItem("Idle Threshold (min)", thresholdEntry),
+		widget.NewFormItem("Workday Goal (hours)", goalEntry),
 		widget.NewFormItem("Theme", themeSelect),
 	}
 
@@ -323,6 +379,24 @@ func (a *App) showSettings() {
 			a.idleThreshold = val
 			a.mu.Unlock()
 			if err := a.db.SetIdleThreshold(val); err != nil {
+				a.showDialogError(err)
+			}
+
+			// Update Workday Goal
+			goalVal, err := strconv.ParseFloat(goalEntry.Text, 64)
+			if err != nil || goalVal <= 0 {
+				a.showDialogError(fmt.Errorf("invalid workday goal value"))
+				return
+			}
+			a.mu.Lock()
+			a.workdayLength = goalVal
+			// Reset goalReachedToday if we increased the goal and it was reached but no longer is
+			total := a.calculateTotalDurationToday()
+			if total.Hours() < goalVal {
+				a.goalReachedToday = false
+			}
+			a.mu.Unlock()
+			if err := a.db.SetWorkdayLength(goalVal); err != nil {
 				a.showDialogError(err)
 			}
 
@@ -354,16 +428,22 @@ func (a *App) makeUI() fyne.CanvasObject {
 	a.timerLabel.TextStyle = fyne.TextStyle{Bold: true}
 	a.timerLabel.Alignment = fyne.TextAlignCenter
 
+	a.totalLabel = widget.NewLabel("Total Today: 0s")
+	a.totalLabel.Alignment = fyne.TextAlignCenter
+
 	// Recording Icon (Red Circle)
 	a.recordingIcon = canvas.NewCircle(color.RGBA{R: 255, G: 0, B: 0, A: 255})
 	a.recordingIcon.Resize(fyne.NewSize(12, 12))
 	a.recordingIcon.Hide()
 
-	timerContainer := container.NewHBox(
-		layout.NewSpacer(),
-		container.NewCenter(a.recordingIcon),
-		a.timerLabel,
-		layout.NewSpacer(),
+	timerContainer := container.NewVBox(
+		container.NewHBox(
+			layout.NewSpacer(),
+			container.NewCenter(a.recordingIcon),
+			a.timerLabel,
+			layout.NewSpacer(),
+		),
+		a.totalLabel,
 	)
 
 	// Buttons
@@ -517,6 +597,13 @@ func main() {
 		idleThreshold = 5
 	}
 
+	// Load Workday Goal
+	workdayGoal, err := db.GetWorkdayLength()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to load workday goal: %v\n", err)
+		workdayGoal = 8.0
+	}
+
 	idleCtx, idleCancel := context.WithCancel(context.Background())
 
 	application := &App{
@@ -526,9 +613,22 @@ func main() {
 		tasks:         make([]*models.Task, 0),
 		timerStop:     make(chan struct{}),
 		idleThreshold: idleThreshold,
+		workdayLength: workdayGoal,
 		idleSince:     time.Now().Round(0), // Assume idle from start
 		idleCtx:       idleCtx,
 		idleCancel:    idleCancel,
+	}
+
+	// Set up tray icon if supported
+	if desk, ok := myApp.(desktop.App); ok {
+		application.desk = desk
+		menu := fyne.NewMenu("TrackYou",
+			fyne.NewMenuItem("Show", func() {
+				window.Show()
+				window.RequestFocus()
+			}))
+		desk.SetSystemTrayMenu(menu)
+		desk.SetSystemTrayIcon(theme.HistoryIcon())
 	}
 
 	go application.monitorIdle(idleCtx)
@@ -552,6 +652,12 @@ func main() {
 	}
 	application.tasks = tasks
 	application.updateTaskGroups()
+
+	// Initial goal check
+	totalToday := application.calculateTotalDurationToday()
+	if totalToday.Hours() >= application.workdayLength {
+		application.goalReachedToday = true
+	}
 
 	// --- Menu Construction ---
 	settingsMenu := fyne.NewMenu("File",
