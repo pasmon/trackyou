@@ -78,7 +78,7 @@ func (a *App) getGoalReachedToday() bool {
 	defer a.mu.RUnlock()
 	return a.goalReachedToday
 }
-func (a *App) updateSummaryUI() {
+func (a *App) updateSummaryUI(silent bool) {
 	a.mu.RLock()
 	goal := a.workdayLength
 	reached := a.goalReachedToday
@@ -90,11 +90,13 @@ func (a *App) updateSummaryUI() {
 		a.totalLabel.SetText("✅ " + totalText)
 		if !reached {
 			a.setGoalReachedToday(true)
-			a.app.SendNotification(fyne.NewNotification(
-				"Goal Reached!",
-				fmt.Sprintf("You've completed your %.1f hour workday goal!", goal),
-			))
-			a.window.RequestFocus()
+			if !silent {
+				a.app.SendNotification(fyne.NewNotification(
+					"Goal Reached!",
+					fmt.Sprintf("You've completed your %.1f hour workday goal!", goal),
+				))
+				a.window.RequestFocus()
+			}
 		}
 	} else {
 		a.totalLabel.SetText(totalText)
@@ -109,7 +111,7 @@ func (a *App) calculateTotalDurationTodayUnlocked() time.Duration {
 	var total time.Duration
 	now := time.Now()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	tomorrow := today.Add(24 * time.Hour)
+	tomorrow := today.AddDate(0, 0, 1)
 
 	for _, t := range a.tasks {
 		taskStart := t.StartTime
@@ -166,19 +168,10 @@ func (a *App) updateTimer() {
 	defer ticker.Stop()
 
 	blink := false
-	lastDay := time.Now().Day()
 
 	for {
 		select {
 		case <-ticker.C:
-			now := time.Now()
-			if now.Day() != lastDay {
-				a.mu.Lock()
-				a.goalReachedToday = false
-				a.mu.Unlock()
-				lastDay = now.Day()
-			}
-
 			a.mu.RLock()
 			task := a.currentTask
 			a.mu.RUnlock()
@@ -196,7 +189,7 @@ func (a *App) updateTimer() {
 					a.recordingIcon.Refresh()
 				}
 
-				a.updateSummaryUI()
+				a.updateSummaryUI(false)
 			})
 		case <-a.timerStop:
 			return
@@ -315,6 +308,11 @@ func (a *App) stopTask() {
 	a.updateTaskGroups()
 	a.mu.Unlock()
 
+	// Refresh UI instantly
+	fyne.Do(func() {
+		a.updateSummaryUI(false)
+	})
+
 	a.updateButtonsState(false)
 
 	if a.taskList != nil {
@@ -379,6 +377,32 @@ func (a *App) checkIdle(lastNotified *time.Time) bool {
 		}
 	}
 	return false
+}
+
+func (a *App) monitorMidnightRollover(ctx context.Context) {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+
+	lastDay := time.Now().Day()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			now := time.Now()
+			if now.Day() != lastDay {
+				a.mu.Lock()
+				a.goalReachedToday = false
+				a.mu.Unlock()
+				lastDay = now.Day()
+
+				fyne.Do(func() {
+					a.updateSummaryUI(false)
+				})
+			}
+		}
+	}
 }
 
 func (a *App) updateButtonsState(running bool) {
@@ -473,7 +497,7 @@ func (a *App) showSettings() {
 
 				// Refresh UI immediately
 				fyne.Do(func() {
-					a.updateSummaryUI()
+					a.updateSummaryUI(false)
 				})
 			}
 
@@ -713,6 +737,7 @@ func main() {
 	}
 
 	go application.monitorIdle(idleCtx)
+	go application.monitorMidnightRollover(idleCtx)
 
 	// Load Theme
 	savedTheme, err := db.GetTheme()
@@ -737,7 +762,7 @@ func main() {
 	application.mu.Unlock()
 
 	// Initial goal check and UI update
-	application.updateSummaryUI()
+	application.updateSummaryUI(true)
 
 	// --- Menu Construction ---
 	settingsMenu := fyne.NewMenu("File",
