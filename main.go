@@ -73,6 +73,38 @@ func (a *App) setGoalReachedToday(reached bool) {
 	a.goalReachedToday = reached
 }
 
+func (a *App) getGoalReachedToday() bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.goalReachedToday
+}
+func (a *App) updateSummaryUI() {
+	a.mu.RLock()
+	goal := a.workdayLength
+	reached := a.goalReachedToday
+	total := a.calculateTotalDurationTodayUnlocked()
+	a.mu.RUnlock()
+
+	totalText := fmt.Sprintf("Total Today: %v / %.1fh", total.Round(time.Second), goal)
+	if total.Hours() >= goal {
+		a.totalLabel.SetText("✅ " + totalText)
+		if !reached {
+			a.setGoalReachedToday(true)
+			a.app.SendNotification(fyne.NewNotification(
+				"Goal Reached!",
+				fmt.Sprintf("You've completed your %.1f hour workday goal!", goal),
+			))
+			a.window.RequestFocus()
+		}
+	} else {
+		a.totalLabel.SetText(totalText)
+		if reached {
+			a.setGoalReachedToday(false)
+		}
+	}
+	a.totalLabel.Refresh()
+}
+
 func (a *App) calculateTotalDurationTodayUnlocked() time.Duration {
 	var total time.Duration
 	now := time.Now()
@@ -149,9 +181,6 @@ func (a *App) updateTimer() {
 
 			a.mu.RLock()
 			task := a.currentTask
-			goal := a.workdayLength
-			reached := a.goalReachedToday
-			total := a.calculateTotalDurationTodayUnlocked()
 			a.mu.RUnlock()
 
 			fyne.Do(func() {
@@ -167,25 +196,7 @@ func (a *App) updateTimer() {
 					a.recordingIcon.Refresh()
 				}
 
-				// Update total today
-				totalText := fmt.Sprintf("Total Today: %v / %.1fh", total.Round(time.Second), goal)
-				if total.Hours() >= goal {
-					a.totalLabel.SetText("✅ " + totalText)
-					if !reached {
-						a.setGoalReachedToday(true)
-
-						a.app.SendNotification(fyne.NewNotification(
-							"Goal Reached!",
-							fmt.Sprintf("You've completed your %.1f hour workday goal!", goal),
-						))
-						a.window.RequestFocus()
-					}
-				} else {
-					a.totalLabel.SetText(totalText)
-					if reached {
-						a.setGoalReachedToday(false)
-					}
-				}
+				a.updateSummaryUI()
 			})
 		case <-a.timerStop:
 			return
@@ -459,6 +470,11 @@ func (a *App) showSettings() {
 					a.goalReachedToday = false
 				}
 				a.mu.Unlock()
+
+				// Refresh UI immediately
+				fyne.Do(func() {
+					a.updateSummaryUI()
+				})
 			}
 
 			// Update Theme
@@ -721,14 +737,7 @@ func main() {
 	application.mu.Unlock()
 
 	// Initial goal check and UI update
-	totalToday := application.calculateTotalDurationToday()
-	if totalToday.Hours() >= application.workdayLength {
-		application.goalReachedToday = true
-		application.totalLabel.SetText(fmt.Sprintf("✅ Total Today: %v / %.1fh", totalToday.Round(time.Second), application.workdayLength))
-	} else {
-		application.totalLabel.SetText(fmt.Sprintf("Total Today: %v / %.1fh", totalToday.Round(time.Second), application.workdayLength))
-	}
-	application.totalLabel.Refresh()
+	application.updateSummaryUI()
 
 	// --- Menu Construction ---
 	settingsMenu := fyne.NewMenu("File",
