@@ -67,6 +67,12 @@ func (a *App) updateTaskGroups() {
 	a.flatItems = models.FlattenTaskGroups(a.taskGroups)
 }
 
+func (a *App) setGoalReachedToday(reached bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.goalReachedToday = reached
+}
+
 func (a *App) calculateTotalDurationTodayUnlocked() time.Duration {
 	var total time.Duration
 	now := time.Now()
@@ -166,9 +172,7 @@ func (a *App) updateTimer() {
 				if total.Hours() >= goal {
 					a.totalLabel.SetText("✅ " + totalText)
 					if !reached {
-						a.mu.Lock()
-						a.goalReachedToday = true
-						a.mu.Unlock()
+						a.setGoalReachedToday(true)
 
 						a.app.SendNotification(fyne.NewNotification(
 							"Goal Reached!",
@@ -179,9 +183,7 @@ func (a *App) updateTimer() {
 				} else {
 					a.totalLabel.SetText(totalText)
 					if reached {
-						a.mu.Lock()
-						a.goalReachedToday = false
-						a.mu.Unlock()
+						a.setGoalReachedToday(false)
 					}
 				}
 			})
@@ -685,6 +687,10 @@ func main() {
 			fyne.NewMenuItem("Show", func() {
 				window.Show()
 				window.RequestFocus()
+			}),
+			fyne.NewMenuItem("Quit", func() {
+				application.idleCancel()
+				myApp.Quit()
 			}))
 		desk.SetSystemTrayMenu(menu)
 		desk.SetSystemTrayIcon(theme.HistoryIcon())
