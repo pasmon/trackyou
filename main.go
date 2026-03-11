@@ -73,11 +73,6 @@ func (a *App) setGoalReachedToday(reached bool) {
 	a.goalReachedToday = reached
 }
 
-func (a *App) getGoalReachedToday() bool {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return a.goalReachedToday
-}
 func (a *App) updateSummaryUI(silent bool) {
 	a.mu.RLock()
 	goal := a.workdayLength
