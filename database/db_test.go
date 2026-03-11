@@ -1,6 +1,7 @@
 package database
 
 import (
+	"math"
 	"os"
 	"testing"
 	"trackyou/models"
@@ -171,5 +172,82 @@ func TestDB_IdleThreshold(t *testing.T) {
 	threshold, _ = db.GetIdleThreshold()
 	if threshold != 5 {
 		t.Errorf("expected default 5 for non-numeric DB value, got %d", threshold)
+	}
+}
+
+func TestDB_WorkdayLength(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	// Default value
+	val, err := db.GetWorkdayLength()
+	if err != nil {
+		t.Errorf("GetWorkdayLength failed: %v", err)
+	}
+	if val != 8.0 {
+		t.Errorf("Expected default 8.0, got %f", val)
+	}
+
+	// Set value
+	if err := db.SetWorkdayLength(7.5); err != nil {
+		t.Errorf("SetWorkdayLength failed: %v", err)
+	}
+
+	val, err = db.GetWorkdayLength()
+	if err != nil {
+		t.Errorf("GetWorkdayLength failed after set: %v", err)
+	}
+	if val != 7.5 {
+		t.Errorf("Expected 7.5, got %f", val)
+	}
+
+	// Invalid value
+	if err := db.SetWorkdayLength(-1.0); err == nil {
+		t.Error("Expected error for negative workday length, got nil")
+	}
+
+	// Manual invalid values
+	_, err = db.Exec("INSERT OR REPLACE INTO preferences (key, value) VALUES ('workday_length', '0.0')")
+	if err != nil {
+		t.Fatalf("failed to insert invalid goal: %v", err)
+	}
+	val, _ = db.GetWorkdayLength()
+	if val != 8.0 {
+		t.Errorf("Expected default 8.0 for 0.0 DB value, got %f", val)
+	}
+
+	_, err = db.Exec("INSERT OR REPLACE INTO preferences (key, value) VALUES ('workday_length', 'invalid')")
+	if err != nil {
+		t.Fatalf("failed to insert non-numeric goal: %v", err)
+	}
+	val, _ = db.GetWorkdayLength()
+	if val != 8.0 {
+		t.Errorf("Expected default 8.0 for non-numeric DB value, got %f", val)
+	}
+
+	// Non-finite values
+	_, err = db.Exec("INSERT OR REPLACE INTO preferences (key, value) VALUES ('workday_length', 'NaN')")
+	if err != nil {
+		t.Fatalf("failed to insert NaN goal: %v", err)
+	}
+	val, _ = db.GetWorkdayLength()
+	if val != 8.0 {
+		t.Errorf("Expected default 8.0 for NaN DB value, got %f", val)
+	}
+
+	_, err = db.Exec("INSERT OR REPLACE INTO preferences (key, value) VALUES ('workday_length', 'Inf')")
+	if err != nil {
+		t.Fatalf("failed to insert Inf goal: %v", err)
+	}
+	val, _ = db.GetWorkdayLength()
+	if val != 8.0 {
+		t.Errorf("Expected default 8.0 for Inf DB value, got %f", val)
+	}
+
+	if err := db.SetWorkdayLength(math.NaN()); err == nil {
+		t.Error("Expected error for NaN workday length, got nil")
+	}
+	if err := db.SetWorkdayLength(math.Inf(1)); err == nil {
+		t.Error("Expected error for Inf workday length, got nil")
 	}
 }

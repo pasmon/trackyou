@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"image/color"
+	"math"
 	"os"
 	"strconv"
 	"sync"
@@ -18,6 +19,7 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -45,8 +47,13 @@ type App struct {
 	idleCtx       context.Context
 	idleCancel    context.CancelFunc
 
+	workdayLength    float64
+	goalReachedToday bool
+	desk             desktop.App
+
 	// UI Components
 	timerLabel       *widget.Label
+	totalLabel       *widget.Label
 	timerStop        chan struct{}
 	projectEntry     *widget.Entry
 	descriptionEntry *widget.Entry
@@ -60,21 +67,114 @@ func (a *App) updateTaskGroups() {
 	a.flatItems = models.FlattenTaskGroups(a.taskGroups)
 }
 
+func (a *App) setGoalReachedToday(reached bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.goalReachedToday = reached
+}
+
+func (a *App) updateSummaryUI(silent bool) {
+	a.mu.RLock()
+	goal := a.workdayLength
+	reached := a.goalReachedToday
+	total := a.calculateTotalDurationTodayUnlocked()
+	a.mu.RUnlock()
+
+	totalText := fmt.Sprintf("Total Today: %v / %.1fh", total.Round(time.Second), goal)
+	if total.Hours() >= goal {
+		a.totalLabel.SetText("✅ " + totalText)
+		if !reached {
+			a.setGoalReachedToday(true)
+			if !silent {
+				a.app.SendNotification(fyne.NewNotification(
+					"Goal Reached!",
+					fmt.Sprintf("You've completed your %.1f hour workday goal!", goal),
+				))
+				a.window.RequestFocus()
+			}
+		}
+	} else {
+		a.totalLabel.SetText(totalText)
+		if reached {
+			a.setGoalReachedToday(false)
+		}
+	}
+	a.totalLabel.Refresh()
+}
+
+func (a *App) calculateTotalDurationTodayUnlocked() time.Duration {
+	var total time.Duration
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	tomorrow := today.AddDate(0, 0, 1)
+
+	for _, t := range a.tasks {
+		taskStart := t.StartTime
+		taskEnd := t.StartTime.Add(t.Duration)
+
+		overlapStart := taskStart
+		if overlapStart.Before(today) {
+			overlapStart = today
+		}
+		overlapEnd := taskEnd
+		if overlapEnd.After(tomorrow) {
+			overlapEnd = tomorrow
+		}
+		if overlapEnd.After(now) {
+			overlapEnd = now
+		}
+
+		overlap := overlapEnd.Sub(overlapStart)
+		if overlap > 0 {
+			total += overlap
+		}
+	}
+
+	if a.currentTask != nil {
+		taskStart := a.currentTask.StartTime
+		taskEnd := now
+
+		overlapStart := taskStart
+		if overlapStart.Before(today) {
+			overlapStart = today
+		}
+		overlapEnd := taskEnd
+		if overlapEnd.After(tomorrow) {
+			overlapEnd = tomorrow
+		}
+
+		overlap := overlapEnd.Sub(overlapStart)
+		if overlap > 0 {
+			total += overlap
+		}
+	}
+
+	return total
+}
+
+func (a *App) calculateTotalDurationToday() time.Duration {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.calculateTotalDurationTodayUnlocked()
+}
+
 func (a *App) updateTimer() {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
 	blink := false
+
 	for {
 		select {
 		case <-ticker.C:
 			a.mu.RLock()
 			task := a.currentTask
 			a.mu.RUnlock()
-			if task != nil {
-				duration := time.Since(task.StartTime)
-				blink = !blink
-				fyne.Do(func() {
+
+			fyne.Do(func() {
+				if task != nil {
+					duration := time.Since(task.StartTime)
+					blink = !blink
 					a.timerLabel.SetText(fmt.Sprintf("%v", duration.Round(time.Second)))
 					if blink {
 						a.recordingIcon.FillColor = color.RGBA{R: 255, G: 0, B: 0, A: 255}
@@ -82,8 +182,10 @@ func (a *App) updateTimer() {
 						a.recordingIcon.FillColor = color.RGBA{R: 255, G: 0, B: 0, A: 100}
 					}
 					a.recordingIcon.Refresh()
-				})
-			}
+				}
+
+				a.updateSummaryUI(false)
+			})
 		case <-a.timerStop:
 			return
 		}
@@ -195,9 +297,16 @@ func (a *App) stopTask() {
 		return
 	}
 
-	// Prepend
+	// Update in-memory state under lock
+	a.mu.Lock()
 	a.tasks = append([]*models.Task{task}, a.tasks...)
 	a.updateTaskGroups()
+	a.mu.Unlock()
+
+	// Refresh UI instantly
+	fyne.Do(func() {
+		a.updateSummaryUI(false)
+	})
 
 	a.updateButtonsState(false)
 
@@ -265,6 +374,32 @@ func (a *App) checkIdle(lastNotified *time.Time) bool {
 	return false
 }
 
+func (a *App) monitorMidnightRollover(ctx context.Context) {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+
+	lastDay := time.Now().Day()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			now := time.Now()
+			if now.Day() != lastDay {
+				a.mu.Lock()
+				a.goalReachedToday = false
+				a.mu.Unlock()
+				lastDay = now.Day()
+
+				fyne.Do(func() {
+					a.updateSummaryUI(false)
+				})
+			}
+		}
+	}
+}
+
 func (a *App) updateButtonsState(running bool) {
 	if a.startButton == nil || a.stopButton == nil || a.projectEntry == nil || a.descriptionEntry == nil {
 		return
@@ -289,10 +424,14 @@ func (a *App) continueTask(task *models.Task) {
 func (a *App) showSettings() {
 	a.mu.RLock()
 	currentThreshold := a.idleThreshold
+	currentGoal := a.workdayLength
 	a.mu.RUnlock()
 
 	thresholdEntry := widget.NewEntry()
 	thresholdEntry.SetText(fmt.Sprintf("%d", currentThreshold))
+
+	goalEntry := widget.NewEntry()
+	goalEntry.SetText(fmt.Sprintf("%.1f", currentGoal))
 
 	currentTheme, _ := a.db.GetTheme()
 	themeSelect := widget.NewSelect([]string{"Light", "Dark", "System"}, nil)
@@ -308,6 +447,7 @@ func (a *App) showSettings() {
 
 	items := []*widget.FormItem{
 		widget.NewFormItem("Idle Threshold (min)", thresholdEntry),
+		widget.NewFormItem("Workday Goal (hours)", goalEntry),
 		widget.NewFormItem("Theme", themeSelect),
 	}
 
@@ -319,11 +459,41 @@ func (a *App) showSettings() {
 				a.showDialogError(fmt.Errorf("invalid threshold value"))
 				return
 			}
-			a.mu.Lock()
-			a.idleThreshold = val
-			a.mu.Unlock()
 			if err := a.db.SetIdleThreshold(val); err != nil {
 				a.showDialogError(err)
+			} else {
+				a.mu.Lock()
+				a.idleThreshold = val
+				a.mu.Unlock()
+			}
+
+			// Update Workday Goal
+			goalVal, err := strconv.ParseFloat(goalEntry.Text, 64)
+			if err != nil || goalVal <= 0 || math.IsNaN(goalVal) || math.IsInf(goalVal, 0) {
+				a.showDialogError(fmt.Errorf("invalid workday goal value"))
+				return
+			}
+
+			// Save to DB first to maintain consistency
+			if err := a.db.SetWorkdayLength(goalVal); err != nil {
+				a.showDialogError(err)
+			} else {
+				// Compute total before acquiring Lock to avoid deadlock if calculateTotalDurationToday was called
+				// but calculateTotalDurationToday is safe to call now because we are not holding any lock.
+				total := a.calculateTotalDurationToday()
+
+				a.mu.Lock()
+				a.workdayLength = goalVal
+				// Reset goalReachedToday if we increased the goal and it was reached but no longer is
+				if total.Hours() < goalVal {
+					a.goalReachedToday = false
+				}
+				a.mu.Unlock()
+
+				// Refresh UI immediately
+				fyne.Do(func() {
+					a.updateSummaryUI(false)
+				})
 			}
 
 			// Update Theme
@@ -354,16 +524,22 @@ func (a *App) makeUI() fyne.CanvasObject {
 	a.timerLabel.TextStyle = fyne.TextStyle{Bold: true}
 	a.timerLabel.Alignment = fyne.TextAlignCenter
 
+	a.totalLabel = widget.NewLabel("Total Today: 0s")
+	a.totalLabel.Alignment = fyne.TextAlignCenter
+
 	// Recording Icon (Red Circle)
 	a.recordingIcon = canvas.NewCircle(color.RGBA{R: 255, G: 0, B: 0, A: 255})
 	a.recordingIcon.Resize(fyne.NewSize(12, 12))
 	a.recordingIcon.Hide()
 
-	timerContainer := container.NewHBox(
-		layout.NewSpacer(),
-		container.NewCenter(a.recordingIcon),
-		a.timerLabel,
-		layout.NewSpacer(),
+	timerContainer := container.NewVBox(
+		container.NewHBox(
+			layout.NewSpacer(),
+			container.NewCenter(a.recordingIcon),
+			a.timerLabel,
+			layout.NewSpacer(),
+		),
+		a.totalLabel,
 	)
 
 	// Buttons
@@ -517,6 +693,13 @@ func main() {
 		idleThreshold = 5
 	}
 
+	// Load Workday Goal
+	workdayGoal, err := db.GetWorkdayLength()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to load workday goal: %v\n", err)
+		workdayGoal = 8.0
+	}
+
 	idleCtx, idleCancel := context.WithCancel(context.Background())
 
 	application := &App{
@@ -526,12 +709,30 @@ func main() {
 		tasks:         make([]*models.Task, 0),
 		timerStop:     make(chan struct{}),
 		idleThreshold: idleThreshold,
+		workdayLength: workdayGoal,
 		idleSince:     time.Now().Round(0), // Assume idle from start
 		idleCtx:       idleCtx,
 		idleCancel:    idleCancel,
 	}
 
+	// Set up tray icon if supported
+	if desk, ok := myApp.(desktop.App); ok {
+		application.desk = desk
+		menu := fyne.NewMenu("TrackYou",
+			fyne.NewMenuItem("Show", func() {
+				window.Show()
+				window.RequestFocus()
+			}),
+			fyne.NewMenuItem("Quit", func() {
+				application.idleCancel()
+				myApp.Quit()
+			}))
+		desk.SetSystemTrayMenu(menu)
+		desk.SetSystemTrayIcon(theme.HistoryIcon())
+	}
+
 	go application.monitorIdle(idleCtx)
+	go application.monitorMidnightRollover(idleCtx)
 
 	// Load Theme
 	savedTheme, err := db.GetTheme()
@@ -550,8 +751,13 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Failed to load tasks: %v\n", err)
 		return
 	}
+	application.mu.Lock()
 	application.tasks = tasks
 	application.updateTaskGroups()
+	application.mu.Unlock()
+
+	// Initial goal check and UI update
+	application.updateSummaryUI(true)
 
 	// --- Menu Construction ---
 	settingsMenu := fyne.NewMenu("File",

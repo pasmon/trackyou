@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -83,6 +84,44 @@ func (db *DB) InitDB() error {
 		INSERT OR IGNORE INTO preferences (key, value) 
 		VALUES ('idle_threshold', '5')
 	`)
+	if err != nil {
+		return err
+	}
+
+	// Set default workday length if not exists (8.0 hours)
+	_, err = db.Exec(`
+		INSERT OR IGNORE INTO preferences (key, value) 
+		VALUES ('workday_length', '8.0')
+	`)
+	return err
+}
+
+// GetWorkdayLength retrieves the workday length preference in hours
+func (db *DB) GetWorkdayLength() (float64, error) {
+	var length string
+	err := db.QueryRow("SELECT value FROM preferences WHERE key = 'workday_length'").Scan(&length)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return 8.0, nil
+		}
+		return 8.0, err
+	}
+	val, err := strconv.ParseFloat(length, 64)
+	if err != nil || val <= 0 || math.IsNaN(val) || math.IsInf(val, 0) {
+		return 8.0, nil
+	}
+	return val, nil
+}
+
+// SetWorkdayLength saves the workday length preference in hours
+func (db *DB) SetWorkdayLength(hours float64) error {
+	if hours <= 0 || math.IsNaN(hours) || math.IsInf(hours, 0) {
+		return fmt.Errorf("workday length must be a finite number > 0")
+	}
+	query := `
+	INSERT OR REPLACE INTO preferences (key, value)
+	VALUES ('workday_length', ?)`
+	_, err := db.Exec(query, strconv.FormatFloat(hours, 'f', 2, 64))
 	return err
 }
 
