@@ -1,6 +1,7 @@
 package database
 
 import (
+	"math"
 	"os"
 	"testing"
 	"trackyou/models"
@@ -222,5 +223,31 @@ func TestDB_WorkdayLength(t *testing.T) {
 	val, _ = db.GetWorkdayLength()
 	if val != 8.0 {
 		t.Errorf("Expected default 8.0 for non-numeric DB value, got %f", val)
+	}
+
+	// Non-finite values
+	_, err = db.Exec("INSERT OR REPLACE INTO preferences (key, value) VALUES ('workday_length', 'NaN')")
+	if err != nil {
+		t.Fatalf("failed to insert NaN goal: %v", err)
+	}
+	val, _ = db.GetWorkdayLength()
+	if val != 8.0 {
+		t.Errorf("Expected default 8.0 for NaN DB value, got %f", val)
+	}
+
+	_, err = db.Exec("INSERT OR REPLACE INTO preferences (key, value) VALUES ('workday_length', 'Inf')")
+	if err != nil {
+		t.Fatalf("failed to insert Inf goal: %v", err)
+	}
+	val, _ = db.GetWorkdayLength()
+	if val != 8.0 {
+		t.Errorf("Expected default 8.0 for Inf DB value, got %f", val)
+	}
+
+	if err := db.SetWorkdayLength(math.NaN()); err == nil {
+		t.Error("Expected error for NaN workday length, got nil")
+	}
+	if err := db.SetWorkdayLength(math.Inf(1)); err == nil {
+		t.Error("Expected error for Inf workday length, got nil")
 	}
 }

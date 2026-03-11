@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -106,7 +107,7 @@ func (db *DB) GetWorkdayLength() (float64, error) {
 		return 8.0, err
 	}
 	val, err := strconv.ParseFloat(length, 64)
-	if err != nil || val <= 0 {
+	if err != nil || val <= 0 || math.IsNaN(val) || math.IsInf(val, 0) {
 		return 8.0, nil
 	}
 	return val, nil
@@ -114,8 +115,8 @@ func (db *DB) GetWorkdayLength() (float64, error) {
 
 // SetWorkdayLength saves the workday length preference in hours
 func (db *DB) SetWorkdayLength(hours float64) error {
-	if hours <= 0 {
-		return fmt.Errorf("workday length must be > 0")
+	if hours <= 0 || math.IsNaN(hours) || math.IsInf(hours, 0) {
+		return fmt.Errorf("workday length must be a finite number > 0")
 	}
 	query := `
 	INSERT OR REPLACE INTO preferences (key, value)

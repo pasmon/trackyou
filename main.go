@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"image/color"
+	"math"
 	"os"
 	"strconv"
 	"sync"
@@ -66,25 +67,60 @@ func (a *App) updateTaskGroups() {
 	a.flatItems = models.FlattenTaskGroups(a.taskGroups)
 }
 
-func (a *App) calculateTotalDurationToday() time.Duration {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-
+func (a *App) calculateTotalDurationTodayUnlocked() time.Duration {
 	var total time.Duration
 	now := time.Now()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	tomorrow := today.Add(24 * time.Hour)
 
 	for _, t := range a.tasks {
-		if t.StartTime.After(today) {
-			total += t.Duration
+		taskStart := t.StartTime
+		taskEnd := t.StartTime.Add(t.Duration)
+
+		overlapStart := taskStart
+		if overlapStart.Before(today) {
+			overlapStart = today
+		}
+		overlapEnd := taskEnd
+		if overlapEnd.After(tomorrow) {
+			overlapEnd = tomorrow
+		}
+		if overlapEnd.After(now) {
+			overlapEnd = now
+		}
+
+		overlap := overlapEnd.Sub(overlapStart)
+		if overlap > 0 {
+			total += overlap
 		}
 	}
 
 	if a.currentTask != nil {
-		total += time.Since(a.currentTask.StartTime)
+		taskStart := a.currentTask.StartTime
+		taskEnd := now
+
+		overlapStart := taskStart
+		if overlapStart.Before(today) {
+			overlapStart = today
+		}
+		overlapEnd := taskEnd
+		if overlapEnd.After(tomorrow) {
+			overlapEnd = tomorrow
+		}
+
+		overlap := overlapEnd.Sub(overlapStart)
+		if overlap > 0 {
+			total += overlap
+		}
 	}
 
 	return total
+}
+
+func (a *App) calculateTotalDurationToday() time.Duration {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.calculateTotalDurationTodayUnlocked()
 }
 
 func (a *App) updateTimer() {
@@ -92,16 +128,25 @@ func (a *App) updateTimer() {
 	defer ticker.Stop()
 
 	blink := false
+	lastDay := time.Now().Day()
+
 	for {
 		select {
 		case <-ticker.C:
+			now := time.Now()
+			if now.Day() != lastDay {
+				a.mu.Lock()
+				a.goalReachedToday = false
+				a.mu.Unlock()
+				lastDay = now.Day()
+			}
+
 			a.mu.RLock()
 			task := a.currentTask
 			goal := a.workdayLength
 			reached := a.goalReachedToday
+			total := a.calculateTotalDurationTodayUnlocked()
 			a.mu.RUnlock()
-
-			total := a.calculateTotalDurationToday()
 
 			fyne.Do(func() {
 				if task != nil {
@@ -133,6 +178,11 @@ func (a *App) updateTimer() {
 					}
 				} else {
 					a.totalLabel.SetText(totalText)
+					if reached {
+						a.mu.Lock()
+						a.goalReachedToday = false
+						a.mu.Unlock()
+					}
 				}
 			})
 		case <-a.timerStop:
@@ -246,9 +296,11 @@ func (a *App) stopTask() {
 		return
 	}
 
-	// Prepend
+	// Update in-memory state under lock
+	a.mu.Lock()
 	a.tasks = append([]*models.Task{task}, a.tasks...)
 	a.updateTaskGroups()
+	a.mu.Unlock()
 
 	a.updateButtonsState(false)
 
@@ -375,29 +427,36 @@ func (a *App) showSettings() {
 				a.showDialogError(fmt.Errorf("invalid threshold value"))
 				return
 			}
-			a.mu.Lock()
-			a.idleThreshold = val
-			a.mu.Unlock()
 			if err := a.db.SetIdleThreshold(val); err != nil {
 				a.showDialogError(err)
+			} else {
+				a.mu.Lock()
+				a.idleThreshold = val
+				a.mu.Unlock()
 			}
 
 			// Update Workday Goal
 			goalVal, err := strconv.ParseFloat(goalEntry.Text, 64)
-			if err != nil || goalVal <= 0 {
+			if err != nil || goalVal <= 0 || math.IsNaN(goalVal) || math.IsInf(goalVal, 0) {
 				a.showDialogError(fmt.Errorf("invalid workday goal value"))
 				return
 			}
-			a.mu.Lock()
-			a.workdayLength = goalVal
-			// Reset goalReachedToday if we increased the goal and it was reached but no longer is
-			total := a.calculateTotalDurationToday()
-			if total.Hours() < goalVal {
-				a.goalReachedToday = false
-			}
-			a.mu.Unlock()
+
+			// Save to DB first to maintain consistency
 			if err := a.db.SetWorkdayLength(goalVal); err != nil {
 				a.showDialogError(err)
+			} else {
+				// Compute total before acquiring Lock to avoid deadlock if calculateTotalDurationToday was called
+				// but calculateTotalDurationToday is safe to call now because we are not holding any lock.
+				total := a.calculateTotalDurationToday()
+
+				a.mu.Lock()
+				a.workdayLength = goalVal
+				// Reset goalReachedToday if we increased the goal and it was reached but no longer is
+				if total.Hours() < goalVal {
+					a.goalReachedToday = false
+				}
+				a.mu.Unlock()
 			}
 
 			// Update Theme
@@ -650,14 +709,20 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Failed to load tasks: %v\n", err)
 		return
 	}
+	application.mu.Lock()
 	application.tasks = tasks
 	application.updateTaskGroups()
+	application.mu.Unlock()
 
-	// Initial goal check
+	// Initial goal check and UI update
 	totalToday := application.calculateTotalDurationToday()
 	if totalToday.Hours() >= application.workdayLength {
 		application.goalReachedToday = true
+		application.totalLabel.SetText(fmt.Sprintf("✅ Total Today: %v / %.1fh", totalToday.Round(time.Second), application.workdayLength))
+	} else {
+		application.totalLabel.SetText(fmt.Sprintf("Total Today: %v / %.1fh", totalToday.Round(time.Second), application.workdayLength))
 	}
+	application.totalLabel.Refresh()
 
 	// --- Menu Construction ---
 	settingsMenu := fyne.NewMenu("File",
