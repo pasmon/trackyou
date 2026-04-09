@@ -4,7 +4,7 @@ go 1.21.1
 
 require (
 	fyne.io/fyne/v2 v2.7.3
-	github.com/mattn/go-sqlite3 v1.14.41
+	github.com/mattn/go-sqlite3 v1.14.42
 )
 
 require (
