@@ -78,7 +78,7 @@ jobs:
           ./scripts/build-dmg.sh "$VERSION" "arm64" "dist/darwin_darwin_arm64_v8.0/trackyou"
 
       - name: Upload MacOS Artifacts
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
