@@ -5,6 +5,162 @@ import (
 	"time"
 )
 
+// ── ComputeWeeklySummaries tests ────────────────────────────────────────────
+
+func TestComputeWeeklySummaries_Empty(t *testing.T) {
+	result := ComputeWeeklySummaries(nil, time.Now(), 7)
+	if result != nil {
+		t.Errorf("expected nil for no tasks, got %v", result)
+	}
+}
+
+func TestComputeWeeklySummaries_SingleProject(t *testing.T) {
+	now := time.Now()
+	tasks := []*Task{
+		{
+			ProjectName: "Alpha",
+			StartTime:   now.Add(-2 * time.Hour),
+			Duration:    2 * time.Hour,
+		},
+	}
+	summaries := ComputeWeeklySummaries(tasks, now, 7)
+	if len(summaries) != 1 {
+		t.Fatalf("expected 1 summary, got %d", len(summaries))
+	}
+	if summaries[0].ProjectName != "Alpha" {
+		t.Errorf("expected Alpha, got %s", summaries[0].ProjectName)
+	}
+	if summaries[0].Duration != 2*time.Hour {
+		t.Errorf("expected 2h, got %v", summaries[0].Duration)
+	}
+	if summaries[0].Percentage != 1.0 {
+		t.Errorf("expected percentage 1.0, got %f", summaries[0].Percentage)
+	}
+}
+
+func TestComputeWeeklySummaries_MultipleProjects_SortedByDurationDesc(t *testing.T) {
+	now := time.Now()
+	tasks := []*Task{
+		{ProjectName: "B", StartTime: now.Add(-1 * time.Hour), Duration: 1 * time.Hour},
+		{ProjectName: "A", StartTime: now.Add(-3 * time.Hour), Duration: 3 * time.Hour},
+		{ProjectName: "C", StartTime: now.Add(-2 * time.Hour), Duration: 2 * time.Hour},
+	}
+	summaries := ComputeWeeklySummaries(tasks, now, 7)
+	if len(summaries) != 3 {
+		t.Fatalf("expected 3 summaries, got %d", len(summaries))
+	}
+	if summaries[0].ProjectName != "A" || summaries[1].ProjectName != "C" || summaries[2].ProjectName != "B" {
+		t.Errorf("unexpected order: %v, %v, %v", summaries[0].ProjectName, summaries[1].ProjectName, summaries[2].ProjectName)
+	}
+	if summaries[0].Percentage != 1.0 {
+		t.Errorf("expected top project percentage 1.0, got %f", summaries[0].Percentage)
+	}
+}
+
+func TestComputeWeeklySummaries_TieBreakerByName(t *testing.T) {
+	now := time.Now()
+	tasks := []*Task{
+		{ProjectName: "Zebra", StartTime: now.Add(-1 * time.Hour), Duration: time.Hour},
+		{ProjectName: "Alpha", StartTime: now.Add(-1 * time.Hour), Duration: time.Hour},
+	}
+	summaries := ComputeWeeklySummaries(tasks, now, 7)
+	if len(summaries) != 2 {
+		t.Fatalf("expected 2 summaries, got %d", len(summaries))
+	}
+	if summaries[0].ProjectName != "Alpha" {
+		t.Errorf("expected Alpha first (tiebreaker by name), got %s", summaries[0].ProjectName)
+	}
+}
+
+func TestComputeWeeklySummaries_TaskOutsideWindow_Excluded(t *testing.T) {
+	now := time.Now()
+	// Task that finished 8 days ago — entirely outside a 7-day window.
+	old := now.AddDate(0, 0, -8)
+	tasks := []*Task{
+		{ProjectName: "Old", StartTime: old, Duration: time.Hour},
+	}
+	summaries := ComputeWeeklySummaries(tasks, now, 7)
+	if summaries != nil {
+		t.Errorf("expected nil (task outside window), got %v", summaries)
+	}
+}
+
+func TestComputeWeeklySummaries_TaskCrossesWindowStart_Clipped(t *testing.T) {
+	now := time.Now()
+	y, m, d := now.Date()
+	loc := now.Location()
+	windowStart := time.Date(y, m, d-6, 0, 0, 0, 0, loc) // 7 days ago midnight
+
+	// Task starts 1 hour before window, ends 1 hour after window start.
+	taskStart := windowStart.Add(-1 * time.Hour)
+	tasks := []*Task{
+		{ProjectName: "CrossBoundary", StartTime: taskStart, Duration: 2 * time.Hour},
+	}
+	summaries := ComputeWeeklySummaries(tasks, now, 7)
+	if len(summaries) != 1 {
+		t.Fatalf("expected 1 summary, got %d", len(summaries))
+	}
+	// Only the 1 hour after window start should be counted.
+	if summaries[0].Duration != time.Hour {
+		t.Errorf("expected clipped duration 1h, got %v", summaries[0].Duration)
+	}
+}
+
+func TestComputeWeeklySummaries_AggregatesAcrossDays(t *testing.T) {
+	now := time.Now()
+	tasks := []*Task{
+		{ProjectName: "X", StartTime: now.Add(-24 * time.Hour), Duration: 30 * time.Minute},
+		{ProjectName: "X", StartTime: now.Add(-48 * time.Hour), Duration: 30 * time.Minute},
+	}
+	summaries := ComputeWeeklySummaries(tasks, now, 7)
+	if len(summaries) != 1 {
+		t.Fatalf("expected 1 summary for same project, got %d", len(summaries))
+	}
+	if summaries[0].Duration != time.Hour {
+		t.Errorf("expected 1h aggregated, got %v", summaries[0].Duration)
+	}
+}
+
+func TestComputeWeeklySummaries_Timezone(t *testing.T) {
+	loc := time.FixedZone("TZ-5", -5*60*60)
+	now := time.Date(2024, 10, 10, 12, 0, 0, 0, loc)
+	tasks := []*Task{
+		{
+			ProjectName: "TZProject",
+			StartTime:   time.Date(2024, 10, 9, 10, 0, 0, 0, loc),
+			Duration:    time.Hour,
+		},
+	}
+	summaries := ComputeWeeklySummaries(tasks, now, 7)
+	if len(summaries) != 1 {
+		t.Fatalf("expected 1 summary, got %d", len(summaries))
+	}
+	if summaries[0].ProjectName != "TZProject" {
+		t.Errorf("unexpected project: %s", summaries[0].ProjectName)
+	}
+}
+
+func TestComputeWeeklySummaries_WindowDaysOneMeansToday(t *testing.T) {
+	now := time.Now()
+	y, m, d := now.Date()
+	loc := now.Location()
+	startOfToday := time.Date(y, m, d, 0, 0, 0, 0, loc)
+
+	tasks := []*Task{
+		// Within today — should be included.
+		{ProjectName: "Today", StartTime: startOfToday.Add(time.Hour), Duration: time.Hour},
+		// Yesterday — should be excluded.
+		{ProjectName: "Yesterday", StartTime: startOfToday.Add(-2 * time.Hour), Duration: time.Hour},
+	}
+	summaries := ComputeWeeklySummaries(tasks, now, 1)
+	if len(summaries) != 1 {
+		t.Fatalf("expected 1 summary (today only), got %d", len(summaries))
+	}
+	if summaries[0].ProjectName != "Today" {
+		t.Errorf("expected Today project, got %s", summaries[0].ProjectName)
+	}
+}
+
 func TestGroupTasksByDate(t *testing.T) {
 	now := time.Now()
 	yesterday := now.Add(-24 * time.Hour)
