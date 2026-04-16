@@ -60,11 +60,23 @@ type App struct {
 	startButton      *widget.Button
 	stopButton       *widget.Button
 	recordingIcon    *canvas.Circle
+	weeklyCard       *widget.Card
 }
 
 func (a *App) updateTaskGroups() {
 	a.taskGroups = models.GroupTasksByDate(a.tasks)
 	a.flatItems = models.FlattenTaskGroups(a.taskGroups)
+}
+
+func (a *App) refreshWeeklyChart() {
+	if a.weeklyCard == nil {
+		return
+	}
+	a.mu.RLock()
+	now := time.Now()
+	summaries := models.ComputeWeeklySummaries(a.tasks, now, models.StartOfCurrentWeek(now))
+	a.mu.RUnlock()
+	a.weeklyCard.SetContent(container.NewPadded(ui.MakeWeeklyChartContent(summaries)))
 }
 
 func (a *App) setGoalReachedToday(reached bool) {
@@ -313,6 +325,7 @@ func (a *App) stopTask() {
 	if a.taskList != nil {
 		a.taskList.Refresh()
 	}
+	a.refreshWeeklyChart()
 
 	select {
 	case a.timerStop <- struct{}{}:
@@ -565,6 +578,11 @@ func (a *App) makeUI() fyne.CanvasObject {
 
 	inputCard := widget.NewCard("New Task", "", container.NewPadded(inputContainer))
 
+	// Weekly Chart
+	a.weeklyCard = widget.NewCard("This Week by Project", "",
+		container.NewPadded(ui.MakeWeeklyChartContent(nil)),
+	)
+
 	// Task List
 	a.taskList = widget.NewList(
 		a.getTaskCount,
@@ -658,7 +676,7 @@ func (a *App) makeUI() fyne.CanvasObject {
 	)
 
 	mainContent := container.NewBorder(
-		container.NewVBox(topBar, inputCard), // Top
+		container.NewVBox(topBar, inputCard, a.weeklyCard), // Top
 		nil, nil, nil,
 		container.NewPadded(a.taskList), // Center
 	)
@@ -758,6 +776,7 @@ func main() {
 
 	// Initial goal check and UI update
 	application.updateSummaryUI(true)
+	application.refreshWeeklyChart()
 
 	// --- Menu Construction ---
 	settingsMenu := fyne.NewMenu("File",

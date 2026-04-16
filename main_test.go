@@ -382,3 +382,58 @@ func TestIntegration_NormalizeTheme(t *testing.T) {
 		t.Errorf("expected light theme for invalid input, but got %q persisted in DB", persisted)
 	}
 }
+
+func TestIntegration_WeeklyChart_InitialEmpty(t *testing.T) {
+	app, cleanup := setupTestApp(t)
+	defer cleanup()
+
+	if app.weeklyCard == nil {
+		t.Fatal("weeklyCard should not be nil after makeUI")
+	}
+}
+
+func TestIntegration_WeeklyChart_RefreshDoesNotPanic(t *testing.T) {
+	app, cleanup := setupTestApp(t)
+	defer cleanup()
+
+	// Should be safe with no tasks.
+	app.refreshWeeklyChart()
+
+	// Add a task and refresh again.
+	task := models.NewTask("WeeklyProject", "desc")
+	task.StopTask()
+	err := app.db.SaveTask(task)
+	if err != nil {
+		t.Fatalf("failed to save task: %v", err)
+	}
+	tasks, err := app.db.GetTasks()
+	if err != nil {
+		t.Fatalf("failed to get tasks: %v", err)
+	}
+	app.mu.Lock()
+	app.tasks = tasks
+	app.updateTaskGroups()
+	app.mu.Unlock()
+
+	app.refreshWeeklyChart() // must not panic
+}
+
+func TestIntegration_WeeklyChart_UpdatesAfterStopTask(t *testing.T) {
+	app, cleanup := setupTestApp(t)
+	defer cleanup()
+
+	// Start and stop a task; weeklyCard.SetContent should be called without panic.
+	app.projectEntry.SetText("ChartProject")
+	app.descriptionEntry.SetText("testing weekly chart")
+	test.Tap(app.startButton)
+
+	time.Sleep(50 * time.Millisecond)
+
+	test.Tap(app.stopButton)
+
+	// After stop, weekly card should still be non-nil (content was refreshed).
+	if app.weeklyCard == nil {
+		t.Fatal("weeklyCard should not be nil after stop task")
+	}
+}
+
