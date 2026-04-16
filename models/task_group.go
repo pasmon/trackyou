@@ -13,17 +13,22 @@ type WeeklySummary struct {
 	Percentage  float64 // fraction of the largest project's duration (0.0–1.0)
 }
 
-// ComputeWeeklySummaries aggregates completed task durations per project for the
-// rolling window [start-of-today minus (windowDays-1) days … now], clipped to
-// that range. Returns summaries sorted by duration descending, name ascending as
-// a tiebreaker.
-func ComputeWeeklySummaries(tasks []*Task, now time.Time, windowDays int) []WeeklySummary {
-	if windowDays < 1 {
-		windowDays = 1
-	}
+// StartOfCurrentWeek returns midnight on the Monday of the week that contains
+// now, using now's timezone.
+func StartOfCurrentWeek(now time.Time) time.Time {
 	y, m, d := now.Date()
-	loc := now.Location()
-	windowStart := time.Date(y, m, d-(windowDays-1), 0, 0, 0, 0, loc)
+	wd := int(now.Weekday()) // Sunday=0, Monday=1, …, Saturday=6
+	if wd == 0 {
+		wd = 7 // treat Sunday as day 7 so Monday is always day 1
+	}
+	return time.Date(y, m, d-(wd-1), 0, 0, 0, 0, now.Location())
+}
+
+// ComputeWeeklySummaries aggregates completed task durations per project for
+// the window [windowStart … now], clipping each task's duration to that range.
+// Returns summaries sorted by duration descending, name ascending as a
+// tiebreaker.
+func ComputeWeeklySummaries(tasks []*Task, now time.Time, windowStart time.Time) []WeeklySummary {
 	windowEnd := now
 
 	projectDurations := make(map[string]time.Duration)

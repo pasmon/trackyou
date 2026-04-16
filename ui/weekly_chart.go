@@ -15,7 +15,7 @@ import (
 // When summaries is empty it returns a centred empty-state label.
 func MakeWeeklyChartContent(summaries []models.WeeklySummary) fyne.CanvasObject {
 	if len(summaries) == 0 {
-		lbl := widget.NewLabel("No tracked time in the past 7 days.")
+		lbl := widget.NewLabel("No tracked time this week.")
 		lbl.Importance = widget.LowImportance
 		lbl.Alignment = fyne.TextAlignCenter
 		return container.NewCenter(lbl)

@@ -73,7 +73,8 @@ func (a *App) refreshWeeklyChart() {
 		return
 	}
 	a.mu.RLock()
-	summaries := models.ComputeWeeklySummaries(a.tasks, time.Now(), 7)
+	now := time.Now()
+	summaries := models.ComputeWeeklySummaries(a.tasks, now, models.StartOfCurrentWeek(now))
 	a.mu.RUnlock()
 	a.weeklyCard.SetContent(container.NewPadded(ui.MakeWeeklyChartContent(summaries)))
 }
@@ -578,7 +579,7 @@ func (a *App) makeUI() fyne.CanvasObject {
 	inputCard := widget.NewCard("New Task", "", container.NewPadded(inputContainer))
 
 	// Weekly Chart
-	a.weeklyCard = widget.NewCard("Past 7 Days by Project", "",
+	a.weeklyCard = widget.NewCard("This Week by Project", "",
 		container.NewPadded(ui.MakeWeeklyChartContent(nil)),
 	)
 
