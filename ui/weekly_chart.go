@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"trackyou/models"
@@ -62,12 +63,14 @@ func formatWeeklyDuration(d time.Duration) string {
 
 func formatDailyDurations(daily [7]time.Duration) string {
 	labels := [7]string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
-	text := ""
+	var b strings.Builder
 	for i := range daily {
 		if i > 0 {
-			text += "  "
+			b.WriteString("  ")
 		}
-		text += labels[i] + " " + formatWeeklyDuration(daily[i])
+		b.WriteString(labels[i])
+		b.WriteString(" ")
+		b.WriteString(formatWeeklyDuration(daily[i]))
 	}
-	return text
+	return b.String()
 }
