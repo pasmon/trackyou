@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"slices"
 	"testing"
 	"time"
 
@@ -437,3 +438,33 @@ func TestIntegration_WeeklyChart_UpdatesAfterStopTask(t *testing.T) {
 	}
 }
 
+func TestIntegration_ProjectSuggestions_Refresh(t *testing.T) {
+	app, cleanup := setupTestApp(t)
+	defer cleanup()
+
+	oldTask := models.NewTask("Old Project", "old")
+	oldTask.StopTask()
+	oldTask.EndTime = oldTask.EndTime.Add(-2 * time.Hour)
+	oldTask.StartTime = oldTask.EndTime.Add(-30 * time.Minute)
+	if err := app.db.SaveTask(oldTask); err != nil {
+		t.Fatalf("failed to save old task: %v", err)
+	}
+
+	newTask := models.NewTask("New Project", "new")
+	newTask.StopTask()
+	if err := app.db.SaveTask(newTask); err != nil {
+		t.Fatalf("failed to save new task: %v", err)
+	}
+
+	duplicateTask := models.NewTask("New Project", "duplicate")
+	duplicateTask.StopTask()
+	if err := app.db.SaveTask(duplicateTask); err != nil {
+		t.Fatalf("failed to save duplicate task: %v", err)
+	}
+
+	app.refreshProjectSuggestions()
+
+	if !slices.Equal(app.projectEntry.Options, []string{"New Project", "Old Project"}) {
+		t.Fatalf("unexpected project suggestions: %v", app.projectEntry.Options)
+	}
+}

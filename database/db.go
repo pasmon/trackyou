@@ -175,9 +175,9 @@ func (db *DB) GetProjectNames() ([]string, error) {
 	query := `
 	SELECT project_name
 	FROM tasks
-	WHERE project_name <> ''
+	WHERE project_name IS NOT NULL AND project_name <> ''
 	GROUP BY project_name
-	ORDER BY MAX(end_time) DESC, project_name ASC`
+	ORDER BY MAX(end_time) DESC`
 
 	rows, err := db.Query(query)
 	if err != nil {
