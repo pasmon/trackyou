@@ -57,7 +57,7 @@ type App struct {
 	timerLabel       *widget.Label
 	totalLabel       *widget.Label
 	timerStop        chan struct{}
-	projectEntry     *widget.Entry
+	projectEntry     *widget.SelectEntry
 	descriptionEntry *widget.Entry
 	startButton      *widget.Button
 	stopButton       *widget.Button
@@ -318,6 +318,8 @@ func (a *App) stopTask() {
 		return
 	}
 
+	a.refreshProjectSuggestions()
+
 	// Update in-memory state under lock
 	a.mu.Lock()
 	a.tasks = append([]*models.Task{task}, a.tasks...)
@@ -443,6 +445,20 @@ func (a *App) continueTask(task *models.Task) {
 	a.startTask(task.ProjectName, task.Description)
 }
 
+func (a *App) refreshProjectSuggestions() {
+	if a.projectEntry == nil {
+		return
+	}
+
+	projectNames, err := a.db.GetProjectNames()
+	if err != nil {
+		a.showDialogError(err)
+		return
+	}
+
+	a.projectEntry.SetOptions(projectNames)
+}
+
 func (a *App) showSettings() {
 	a.mu.RLock()
 	currentThreshold := a.idleThreshold
@@ -536,10 +552,12 @@ func (a *App) makeUI() fyne.CanvasObject {
 	topBar := container.NewHBox(layout.NewSpacer())
 
 	// Input Area
-	a.projectEntry = widget.NewEntry()
+	a.projectEntry = widget.NewSelectEntry(nil)
 	a.projectEntry.SetPlaceHolder("Project")
 	a.descriptionEntry = widget.NewEntry()
 	a.descriptionEntry.SetPlaceHolder("What are you working on?")
+
+	a.refreshProjectSuggestions()
 
 	// Timer Area
 	a.timerLabel = widget.NewLabel("Ready")
@@ -780,6 +798,7 @@ func main() {
 	application.tasks = tasks
 	application.updateTaskGroups()
 	application.mu.Unlock()
+	application.refreshProjectSuggestions()
 
 	// Initial goal check and UI update
 	application.updateSummaryUI(true)

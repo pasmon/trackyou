@@ -170,6 +170,32 @@ func (db *DB) GetTasks() ([]*models.Task, error) {
 	return tasks, nil
 }
 
+// GetProjectNames retrieves distinct historical project names, newest first.
+func (db *DB) GetProjectNames() ([]string, error) {
+	query := `
+	SELECT project_name
+	FROM tasks
+	WHERE project_name <> ''
+	GROUP BY project_name
+	ORDER BY MAX(end_time) DESC, project_name ASC`
+
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	projectNames := make([]string, 0)
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		projectNames = append(projectNames, name)
+	}
+	return projectNames, nil
+}
+
 // UpdateTask updates an existing task in the database
 func (db *DB) UpdateTask(task *models.Task) error {
 	query := `

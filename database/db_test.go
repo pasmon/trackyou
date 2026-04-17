@@ -3,7 +3,9 @@ package database
 import (
 	"math"
 	"os"
+	"slices"
 	"testing"
+	"time"
 	"trackyou/models"
 )
 
@@ -249,5 +251,43 @@ func TestDB_WorkdayLength(t *testing.T) {
 	}
 	if err := db.SetWorkdayLength(math.Inf(1)); err == nil {
 		t.Error("Expected error for Inf workday length, got nil")
+	}
+}
+
+func TestDB_GetProjectNames(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	oldTask := models.NewTask("Alpha", "old")
+	oldTask.StopTask()
+	oldTask.EndTime = oldTask.EndTime.Add(-2 * time.Hour)
+	oldTask.StartTime = oldTask.EndTime.Add(-30 * time.Minute)
+	if err := db.SaveTask(oldTask); err != nil {
+		t.Fatalf("failed to save old task: %v", err)
+	}
+
+	newTask := models.NewTask("Beta", "new")
+	newTask.StopTask()
+	if err := db.SaveTask(newTask); err != nil {
+		t.Fatalf("failed to save new task: %v", err)
+	}
+
+	duplicateTask := models.NewTask("Beta", "duplicate")
+	duplicateTask.StopTask()
+	if err := db.SaveTask(duplicateTask); err != nil {
+		t.Fatalf("failed to save duplicate task: %v", err)
+	}
+
+	projectNames, err := db.GetProjectNames()
+	if err != nil {
+		t.Fatalf("failed to get project names: %v", err)
+	}
+
+	if len(projectNames) != 2 {
+		t.Fatalf("expected 2 distinct project names, got %d", len(projectNames))
+	}
+
+	if !slices.Equal(projectNames, []string{"Beta", "Alpha"}) {
+		t.Fatalf("unexpected project names order: %v", projectNames)
 	}
 }
