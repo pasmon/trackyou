@@ -25,22 +25,17 @@ func MakeWeeklyChartContent(summaries []models.WeeklySummary) fyne.CanvasObject 
 	rows := make([]fyne.CanvasObject, 0, len(summaries))
 	for _, s := range summaries {
 		nameLabel := widget.NewLabel(s.ProjectName)
-
-		bar := widget.NewProgressBar()
-		bar.Min = 0
-		bar.Max = 1.0
-		bar.SetValue(s.Percentage)
-		bar.TextFormatter = func() string { return "" }
+		nameLabel.TextStyle = fyne.TextStyle{Bold: true}
 
 		durLabel := widget.NewLabel(formatWeeklyDuration(s.Duration))
 		durLabel.Alignment = fyne.TextAlignTrailing
 
 		dailyLabel := widget.NewLabel(formatDailyDurations(s.DailyDurations))
 		dailyLabel.Importance = widget.LowImportance
+		dailyLabel.Wrapping = fyne.TextWrapWord
 
 		row := container.NewVBox(
 			container.NewBorder(nil, nil, nameLabel, durLabel, nil),
-			bar,
 			dailyLabel,
 		)
 		rows = append(rows, row)
@@ -63,14 +58,15 @@ func formatWeeklyDuration(d time.Duration) string {
 
 func formatDailyDurations(daily [7]time.Duration) string {
 	labels := [7]string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
-	var b strings.Builder
+	firstLineParts := make([]string, 0, 4)
+	secondLineParts := make([]string, 0, 3)
 	for i := range daily {
-		if i > 0 {
-			b.WriteString("  ")
+		part := fmt.Sprintf("%s: %s", labels[i], formatWeeklyDuration(daily[i]))
+		if i < 4 {
+			firstLineParts = append(firstLineParts, part)
+			continue
 		}
-		b.WriteString(labels[i])
-		b.WriteString(" ")
-		b.WriteString(formatWeeklyDuration(daily[i]))
+		secondLineParts = append(secondLineParts, part)
 	}
-	return b.String()
+	return strings.Join(firstLineParts, "  |  ") + "\n" + strings.Join(secondLineParts, "  |  ")
 }

@@ -31,6 +31,8 @@ var (
 	date    = "unknown"
 )
 
+const weeklyCardMinHeight float32 = 160
+
 type App struct {
 	window      fyne.Window
 	app         fyne.App
@@ -76,7 +78,14 @@ func (a *App) refreshWeeklyChart() {
 	now := time.Now()
 	summaries := models.ComputeWeeklySummaries(a.tasks, now, models.StartOfCurrentWeek(now))
 	a.mu.RUnlock()
-	a.weeklyCard.SetContent(container.NewPadded(ui.MakeWeeklyChartContent(summaries)))
+	a.weeklyCard.SetContent(a.makeWeeklyCardContent(summaries))
+}
+
+func (a *App) makeWeeklyCardContent(summaries []models.WeeklySummary) fyne.CanvasObject {
+	weeklyContent := container.NewPadded(ui.MakeWeeklyChartContent(summaries))
+	scroll := container.NewVScroll(weeklyContent)
+	scroll.SetMinSize(fyne.NewSize(0, weeklyCardMinHeight))
+	return scroll
 }
 
 func (a *App) setGoalReachedToday(reached bool) {
@@ -570,9 +579,7 @@ func (a *App) makeUI() fyne.CanvasObject {
 	inputContainer := container.NewVBox(
 		a.projectEntry,
 		a.descriptionEntry,
-		layout.NewSpacer(),
 		timerContainer,
-		layout.NewSpacer(),
 		container.NewGridWithColumns(2, a.startButton, a.stopButton),
 	)
 
@@ -580,7 +587,7 @@ func (a *App) makeUI() fyne.CanvasObject {
 
 	// Weekly Chart
 	a.weeklyCard = widget.NewCard("This Week by Project", "",
-		container.NewPadded(ui.MakeWeeklyChartContent(nil)),
+		a.makeWeeklyCardContent(nil),
 	)
 
 	// Task List
