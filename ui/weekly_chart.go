@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"trackyou/models"
@@ -57,21 +58,15 @@ func formatWeeklyDuration(d time.Duration) string {
 
 func formatDailyDurations(daily [7]time.Duration) string {
 	labels := [7]string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
-	var firstLine string
-	var secondLine string
+	firstLineParts := make([]string, 0, 4)
+	secondLineParts := make([]string, 0, 3)
 	for i := range daily {
 		part := fmt.Sprintf("%s: %s", labels[i], formatWeeklyDuration(daily[i]))
 		if i < 4 {
-			if firstLine != "" {
-				firstLine += "  |  "
-			}
-			firstLine += part
+			firstLineParts = append(firstLineParts, part)
 			continue
 		}
-		if secondLine != "" {
-			secondLine += "  |  "
-		}
-		secondLine += part
+		secondLineParts = append(secondLineParts, part)
 	}
-	return firstLine + "\n" + secondLine
+	return strings.Join(firstLineParts, "  |  ") + "\n" + strings.Join(secondLineParts, "  |  ")
 }

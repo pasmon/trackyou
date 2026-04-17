@@ -31,6 +31,8 @@ var (
 	date    = "unknown"
 )
 
+const weeklyCardMinHeight float32 = 160
+
 type App struct {
 	window      fyne.Window
 	app         fyne.App
@@ -82,7 +84,7 @@ func (a *App) refreshWeeklyChart() {
 func (a *App) makeWeeklyCardContent(summaries []models.WeeklySummary) fyne.CanvasObject {
 	weeklyContent := container.NewPadded(ui.MakeWeeklyChartContent(summaries))
 	scroll := container.NewVScroll(weeklyContent)
-	scroll.SetMinSize(fyne.NewSize(0, 160))
+	scroll.SetMinSize(fyne.NewSize(0, weeklyCardMinHeight))
 	return scroll
 }
 
