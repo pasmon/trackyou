@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"trackyou/models"
@@ -24,7 +25,6 @@ func MakeWeeklyChartContent(summaries []models.WeeklySummary) fyne.CanvasObject 
 	rows := make([]fyne.CanvasObject, 0, len(summaries))
 	for _, s := range summaries {
 		nameLabel := widget.NewLabel(s.ProjectName)
-		nameLabel.Truncation = fyne.TextTruncateEllipsis
 
 		bar := widget.NewProgressBar()
 		bar.Min = 0
@@ -35,7 +35,14 @@ func MakeWeeklyChartContent(summaries []models.WeeklySummary) fyne.CanvasObject 
 		durLabel := widget.NewLabel(formatWeeklyDuration(s.Duration))
 		durLabel.Alignment = fyne.TextAlignTrailing
 
-		row := container.NewBorder(nil, nil, nameLabel, durLabel, bar)
+		dailyLabel := widget.NewLabel(formatDailyDurations(s.DailyDurations))
+		dailyLabel.Importance = widget.LowImportance
+
+		row := container.NewVBox(
+			container.NewBorder(nil, nil, nameLabel, durLabel, nil),
+			bar,
+			dailyLabel,
+		)
 		rows = append(rows, row)
 	}
 
@@ -52,4 +59,18 @@ func formatWeeklyDuration(d time.Duration) string {
 		return fmt.Sprintf("%dh %dm", h, m)
 	}
 	return fmt.Sprintf("%dm", m)
+}
+
+func formatDailyDurations(daily [7]time.Duration) string {
+	labels := [7]string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
+	var b strings.Builder
+	for i := range daily {
+		if i > 0 {
+			b.WriteString("  ")
+		}
+		b.WriteString(labels[i])
+		b.WriteString(" ")
+		b.WriteString(formatWeeklyDuration(daily[i]))
+	}
+	return b.String()
 }
