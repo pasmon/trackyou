@@ -112,9 +112,11 @@ func TestComputeWeeklySummaries_TaskCrossesWindowStart_Clipped(t *testing.T) {
 func TestComputeWeeklySummaries_AggregatesAcrossDays(t *testing.T) {
 	now := time.Now()
 	windowStart := now.Add(-72 * time.Hour)
+	task1Start := now.Add(-24 * time.Hour)
+	task2Start := now.Add(-48 * time.Hour)
 	tasks := []*Task{
-		{ProjectName: "X", StartTime: now.Add(-24 * time.Hour), Duration: 30 * time.Minute},
-		{ProjectName: "X", StartTime: now.Add(-48 * time.Hour), Duration: 30 * time.Minute},
+		{ProjectName: "X", StartTime: task1Start, Duration: 30 * time.Minute},
+		{ProjectName: "X", StartTime: task2Start, Duration: 30 * time.Minute},
 	}
 	summaries := ComputeWeeklySummaries(tasks, now, windowStart)
 	if len(summaries) != 1 {
@@ -122,6 +124,17 @@ func TestComputeWeeklySummaries_AggregatesAcrossDays(t *testing.T) {
 	}
 	if summaries[0].Duration != time.Hour {
 		t.Errorf("expected 1h aggregated, got %v", summaries[0].Duration)
+	}
+	idx1 := weekDayIndex(time.Date(task1Start.Year(), task1Start.Month(), task1Start.Day(), 0, 0, 0, 0, task1Start.Location()), windowStart)
+	idx2 := weekDayIndex(time.Date(task2Start.Year(), task2Start.Month(), task2Start.Day(), 0, 0, 0, 0, task2Start.Location()), windowStart)
+	if idx1 < 0 || idx2 < 0 {
+		t.Fatalf("expected both tasks to be inside the test window; got idx1=%d idx2=%d", idx1, idx2)
+	}
+	if summaries[0].DailyDurations[idx1] != 30*time.Minute {
+		t.Errorf("expected first task day bucket to have 30m, got %v", summaries[0].DailyDurations[idx1])
+	}
+	if summaries[0].DailyDurations[idx2] != 30*time.Minute {
+		t.Errorf("expected second task day bucket to have 30m, got %v", summaries[0].DailyDurations[idx2])
 	}
 }
 
@@ -239,6 +252,59 @@ func TestComputeWeeklySummaries_CalendarWeekBoundary(t *testing.T) {
 	}
 	if summaries[0].ProjectName != "ThisWeek" {
 		t.Errorf("expected ThisWeek, got %s", summaries[0].ProjectName)
+	}
+	if summaries[0].DailyDurations[1] != time.Hour {
+		t.Errorf("expected Tuesday bucket to contain 1h, got %v", summaries[0].DailyDurations[1])
+	}
+}
+
+func TestComputeWeeklySummaries_SplitsTaskAcrossMidnightBuckets(t *testing.T) {
+	loc := time.UTC
+	now := time.Date(2024, 10, 10, 2, 0, 0, 0, loc) // Thursday
+	windowStart := StartOfCurrentWeek(now)          // Monday
+
+	tasks := []*Task{
+		{
+			ProjectName: "NightShift",
+			StartTime:   time.Date(2024, 10, 9, 23, 0, 0, 0, loc), // Wednesday
+			Duration:    3 * time.Hour,                            // spills to Thursday
+		},
+	}
+
+	summaries := ComputeWeeklySummaries(tasks, now, windowStart)
+	if len(summaries) != 1 {
+		t.Fatalf("expected 1 summary, got %d", len(summaries))
+	}
+	if summaries[0].DailyDurations[2] != time.Hour {
+		t.Errorf("expected Wednesday bucket 1h, got %v", summaries[0].DailyDurations[2])
+	}
+	if summaries[0].DailyDurations[3] != 2*time.Hour {
+		t.Errorf("expected Thursday bucket 2h, got %v", summaries[0].DailyDurations[3])
+	}
+}
+
+func TestComputeWeeklySummaries_ClipsTaskAtNowForDailyBuckets(t *testing.T) {
+	loc := time.UTC
+	now := time.Date(2024, 10, 10, 12, 0, 0, 0, loc) // Thursday
+	windowStart := StartOfCurrentWeek(now)           // Monday
+
+	tasks := []*Task{
+		{
+			ProjectName: "Current",
+			StartTime:   time.Date(2024, 10, 10, 10, 0, 0, 0, loc),
+			Duration:    5 * time.Hour,
+		},
+	}
+
+	summaries := ComputeWeeklySummaries(tasks, now, windowStart)
+	if len(summaries) != 1 {
+		t.Fatalf("expected 1 summary, got %d", len(summaries))
+	}
+	if summaries[0].Duration != 2*time.Hour {
+		t.Errorf("expected duration clipped at now to 2h, got %v", summaries[0].Duration)
+	}
+	if summaries[0].DailyDurations[3] != 2*time.Hour {
+		t.Errorf("expected Thursday bucket clipped at now to 2h, got %v", summaries[0].DailyDurations[3])
 	}
 }
 

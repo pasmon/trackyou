@@ -8,9 +8,10 @@ import (
 
 // WeeklySummary holds the total tracked duration for a project over a time window.
 type WeeklySummary struct {
-	ProjectName string
-	Duration    time.Duration
-	Percentage  float64 // fraction of the largest project's duration (0.0–1.0)
+	ProjectName    string
+	Duration       time.Duration
+	DailyDurations [7]time.Duration // Monday (index 0) through Sunday (index 6)
+	Percentage     float64          // fraction of the largest project's duration (0.0–1.0)
 }
 
 // StartOfCurrentWeek returns midnight on the Monday of the week that contains
@@ -31,7 +32,7 @@ func StartOfCurrentWeek(now time.Time) time.Time {
 func ComputeWeeklySummaries(tasks []*Task, now time.Time, windowStart time.Time) []WeeklySummary {
 	windowEnd := now
 
-	projectDurations := make(map[string]time.Duration)
+	projectSummaries := make(map[string]*WeeklySummary)
 	for _, task := range tasks {
 		taskStart := task.StartTime
 		taskEnd := task.StartTime.Add(task.Duration)
@@ -44,21 +45,48 @@ func ComputeWeeklySummaries(tasks []*Task, now time.Time, windowStart time.Time)
 		if end.After(windowEnd) {
 			end = windowEnd
 		}
-		if end.After(start) {
-			projectDurations[task.ProjectName] += end.Sub(start)
+		if !end.After(start) {
+			continue
+		}
+
+		summary, ok := projectSummaries[task.ProjectName]
+		if !ok {
+			summary = &WeeklySummary{ProjectName: task.ProjectName}
+			projectSummaries[task.ProjectName] = summary
+		}
+
+		segmentDayStart := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, start.Location())
+		for segmentDayStart.Before(end) {
+			nextDay := segmentDayStart.AddDate(0, 0, 1)
+			segmentStart := start
+			if segmentStart.Before(segmentDayStart) {
+				segmentStart = segmentDayStart
+			}
+			segmentEnd := end
+			if segmentEnd.After(nextDay) {
+				segmentEnd = nextDay
+			}
+			if segmentEnd.After(segmentStart) {
+				segmentDuration := segmentEnd.Sub(segmentStart)
+				if dayIdx := weekDayIndex(segmentDayStart, windowStart); dayIdx >= 0 {
+					summary.DailyDurations[dayIdx] += segmentDuration
+				}
+				summary.Duration += segmentDuration
+			}
+			segmentDayStart = nextDay
 		}
 	}
 
-	if len(projectDurations) == 0 {
+	if len(projectSummaries) == 0 {
 		return nil
 	}
 
-	summaries := make([]WeeklySummary, 0, len(projectDurations))
+	summaries := make([]WeeklySummary, 0, len(projectSummaries))
 	var maxDuration time.Duration
-	for name, dur := range projectDurations {
-		summaries = append(summaries, WeeklySummary{ProjectName: name, Duration: dur})
-		if dur > maxDuration {
-			maxDuration = dur
+	for _, summary := range projectSummaries {
+		summaries = append(summaries, *summary)
+		if summary.Duration > maxDuration {
+			maxDuration = summary.Duration
 		}
 	}
 
@@ -76,6 +104,22 @@ func ComputeWeeklySummaries(tasks []*Task, now time.Time, windowStart time.Time)
 	}
 
 	return summaries
+}
+
+func weekDayIndex(dayStart time.Time, weekStart time.Time) int {
+	for i := 0; i < 7; i++ {
+		candidate := weekStart.AddDate(0, 0, i)
+		if sameDate(dayStart, candidate) {
+			return i
+		}
+	}
+	return -1
+}
+
+func sameDate(a, b time.Time) bool {
+	ay, am, ad := a.Date()
+	by, bm, bd := b.Date()
+	return ay == by && am == bm && ad == bd
 }
 
 type ProjectSummary struct {

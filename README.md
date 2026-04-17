@@ -7,7 +7,7 @@ A simple desktop application for tracking time spent on different projects and t
 - Track time spent on different projects and tasks
 - Start and stop task timers
 - View task history with durations
-- **Weekly overview** – visual breakdown of hours per project for the current calendar week (Monday–Sunday), with proportional bars
+- **Weekly overview** – per-project totals with daily breakdown (Mon–Sun) for the current calendar week, plus proportional bars
 - Persistent storage using SQLite
 - Cross-platform support (Windows, macOS, Linux)
 
