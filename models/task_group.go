@@ -109,13 +109,17 @@ func ComputeWeeklySummaries(tasks []*Task, now time.Time, windowStart time.Time)
 }
 
 func weekDayIndex(dayStart time.Time, weekStart time.Time) int {
-	delta := time.Date(dayStart.Year(), dayStart.Month(), dayStart.Day(), 0, 0, 0, 0, time.UTC).
-		Sub(time.Date(weekStart.Year(), weekStart.Month(), weekStart.Day(), 0, 0, 0, 0, time.UTC))
-	day := int(delta / (24 * time.Hour))
-	if day < 0 || day > 6 {
-		return -1
+	loc := weekStart.Location()
+	dayStart = dayStart.In(loc)
+	dayYear, dayMonth, dayDate := dayStart.Date()
+	for i := 0; i < 7; i++ {
+		candidate := weekStart.AddDate(0, 0, i)
+		cy, cm, cd := candidate.Date()
+		if dayYear == cy && dayMonth == cm && dayDate == cd {
+			return i
+		}
 	}
-	return day
+	return -1
 }
 
 type ProjectSummary struct {
