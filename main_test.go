@@ -463,12 +463,20 @@ func TestIntegration_ProjectSuggestions_Refresh(t *testing.T) {
 
 	app.refreshProjectSuggestions()
 
+	// SelectEntry does not expose options publicly, so verify suggestion
+	// source ordering and ensure refresh executes without errors.
 	projectNames, err := app.db.GetProjectNames()
 	if err != nil {
 		t.Fatalf("failed to fetch project names: %v", err)
 	}
 
-	if len(projectNames) != 2 || projectNames[0] != "New Project" || projectNames[1] != "Old Project" {
-		t.Fatalf("unexpected project suggestions source: %v", projectNames)
+	if len(projectNames) != 2 {
+		t.Fatalf("expected 2 project names, got %d (%v)", len(projectNames), projectNames)
+	}
+	if projectNames[0] != "New Project" {
+		t.Fatalf("expected most recent project to be New Project, got %q", projectNames[0])
+	}
+	if projectNames[1] != "Old Project" {
+		t.Fatalf("expected older project to be Old Project, got %q", projectNames[1])
 	}
 }
