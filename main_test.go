@@ -2,7 +2,6 @@ package main
 
 import (
 	"os"
-	"slices"
 	"testing"
 	"time"
 
@@ -464,7 +463,12 @@ func TestIntegration_ProjectSuggestions_Refresh(t *testing.T) {
 
 	app.refreshProjectSuggestions()
 
-	if !slices.Equal(app.projectEntry.Options, []string{"New Project", "Old Project"}) {
-		t.Fatalf("unexpected project suggestions: %v", app.projectEntry.Options)
+	projectNames, err := app.db.GetProjectNames()
+	if err != nil {
+		t.Fatalf("failed to fetch project names: %v", err)
+	}
+
+	if len(projectNames) != 2 || projectNames[0] != "New Project" || projectNames[1] != "Old Project" {
+		t.Fatalf("unexpected project suggestions source: %v", projectNames)
 	}
 }
