@@ -612,14 +612,13 @@ func (a *App) makeUI() fyne.CanvasObject {
 	a.taskList = widget.NewList(
 		a.getTaskCount,
 		func() fyne.CanvasObject {
-			// Template item
 			title := widget.NewLabel("Title")
 			title.TextStyle = fyne.TextStyle{Bold: true}
 			title.Truncation = fyne.TextTruncateEllipsis
 
 			subtitle := widget.NewLabel("Subtitle")
 			subtitle.Truncation = fyne.TextTruncateEllipsis
-			subtitle.Importance = widget.LowImportance // Greyish
+			subtitle.Importance = widget.LowImportance
 
 			icon := widget.NewIcon(theme.ContentPasteIcon())
 
@@ -628,17 +627,10 @@ func (a *App) makeUI() fyne.CanvasObject {
 
 			textContainer := container.NewVBox(title, subtitle)
 
-			// Layout: Icon | Text | Button
-			content := container.NewBorder(nil, nil, icon, playBtn, textContainer)
-
-			// Add a background or Card wrapper?
-			// A Card wrapper creates a nice separated look.
-			card := widget.NewCard("", "", content)
-			return card
+			return container.NewBorder(nil, nil, icon, playBtn, textContainer)
 		},
 		func(id widget.ListItemID, item fyne.CanvasObject) {
-			card := item.(*widget.Card)
-			content := card.Content.(*fyne.Container)
+			content := item.(*fyne.Container)
 
 			var icon *widget.Icon
 			var playBtn *widget.Button
@@ -671,19 +663,13 @@ func (a *App) makeUI() fyne.CanvasObject {
 
 			switch itemType {
 			case models.ItemTypeHeader:
-				icon.SetResource(theme.HistoryIcon()) // Calendar icon not standard? History is close.
+				icon.SetResource(theme.HistoryIcon())
 				playBtn.Hide()
 				title.TextStyle = fyne.TextStyle{Bold: true}
 				subtitle.TextStyle = fyne.TextStyle{Bold: true}
 
-			case models.ItemTypeSummary:
-				icon.SetResource(theme.FolderIcon())
-				playBtn.Hide()
-				title.TextStyle = fyne.TextStyle{Bold: false} // Normal
-				subtitle.TextStyle = fyne.TextStyle{Italic: true}
-
 			case models.ItemTypeTask:
-				icon.SetResource(theme.DocumentIcon()) // Task icon
+				icon.SetResource(theme.DocumentIcon())
 				playBtn.Show()
 				playBtn.OnTapped = func() {
 					task := a.getTask(id)
@@ -695,8 +681,7 @@ func (a *App) makeUI() fyne.CanvasObject {
 				subtitle.TextStyle = fyne.TextStyle{}
 			}
 
-			// Refresh the card layout
-			card.Refresh()
+			content.Refresh()
 		},
 	)
 
