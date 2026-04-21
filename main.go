@@ -668,12 +668,6 @@ func (a *App) makeUI() fyne.CanvasObject {
 				title.TextStyle = fyne.TextStyle{Bold: true}
 				subtitle.TextStyle = fyne.TextStyle{Bold: true}
 
-			case models.ItemTypeSummary:
-				icon.SetResource(theme.FolderIcon())
-				playBtn.Hide()
-				title.TextStyle = fyne.TextStyle{Bold: false}
-				subtitle.TextStyle = fyne.TextStyle{Italic: true}
-
 			case models.ItemTypeTask:
 				icon.SetResource(theme.DocumentIcon())
 				playBtn.Show()

@@ -353,9 +353,6 @@ func TestFlattenTaskGroups(t *testing.T) {
 					Duration:    time.Hour,
 				},
 			},
-			ProjectSummaries: []ProjectSummary{
-				{Name: "P1", Duration: time.Hour},
-			},
 		},
 	}
 

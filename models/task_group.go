@@ -122,22 +122,15 @@ func weekDayIndex(dayStart time.Time, weekStart time.Time) int {
 	return -1
 }
 
-type ProjectSummary struct {
-	Name     string
-	Duration time.Duration
-}
-
 type TaskGroup struct {
-	Date             time.Time
-	Tasks            []*Task
-	ProjectSummaries []ProjectSummary
+	Date  time.Time
+	Tasks []*Task
 }
 
 type ItemType int
 
 const (
 	ItemTypeHeader ItemType = iota
-	ItemTypeSummary
 	ItemTypeTask
 )
 
@@ -205,25 +198,9 @@ func GroupTasksByDate(tasks []*Task) []TaskGroup {
 			return tasksInGroup[i].StartTime.After(tasksInGroup[j].StartTime)
 		})
 
-		// Calculate project summaries
-		projectDurations := make(map[string]time.Duration)
-		for _, task := range tasksInGroup {
-			projectDurations[task.ProjectName] += task.Duration
-		}
-
-		var summaries []ProjectSummary
-		for name, duration := range projectDurations {
-			summaries = append(summaries, ProjectSummary{Name: name, Duration: duration})
-		}
-		// Sort summaries by name
-		sort.Slice(summaries, func(i, j int) bool {
-			return summaries[i].Name < summaries[j].Name
-		})
-
 		taskGroups = append(taskGroups, TaskGroup{
-			Date:             date,
-			Tasks:            tasksInGroup,
-			ProjectSummaries: summaries,
+			Date:  date,
+			Tasks: tasksInGroup,
 		})
 	}
 
