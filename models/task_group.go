@@ -149,10 +149,10 @@ type FlatListItem struct {
 }
 
 func FlattenTaskGroups(groups []TaskGroup) []FlatListItem {
-	// Pre-calculate capacity: 1 header + summaries + tasks per group
+	// Pre-calculate capacity: 1 header + tasks per group
 	capacity := 0
 	for _, group := range groups {
-		capacity += 1 + len(group.ProjectSummaries) + len(group.Tasks)
+		capacity += 1 + len(group.Tasks)
 	}
 	items := make([]FlatListItem, 0, capacity)
 	for _, group := range groups {
@@ -166,15 +166,6 @@ func FlattenTaskGroups(groups []TaskGroup) []FlatListItem {
 			Title:    group.Date.Format("Monday, January 2"),
 			Subtitle: fmt.Sprintf("Total: %v", totalDuration.Round(time.Second)),
 		})
-
-		// Project summaries
-		for _, summary := range group.ProjectSummaries {
-			items = append(items, FlatListItem{
-				Type:     ItemTypeSummary,
-				Title:    summary.Name,
-				Subtitle: fmt.Sprintf("%v", summary.Duration.Round(time.Second)),
-			})
-		}
 
 		// Tasks
 		for _, task := range group.Tasks {
