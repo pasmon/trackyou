@@ -603,7 +603,7 @@ func (a *App) makeUI() fyne.CanvasObject {
 
 	inputCard := widget.NewCard("New Task", "", container.NewPadded(inputContainer))
 
-	// Weekly Chart
+	// Weekly Chart (lives in the Summary tab)
 	a.weeklyCard = widget.NewCard("This Week by Project", "",
 		a.makeWeeklyCardContent(nil),
 	)
@@ -685,10 +685,15 @@ func (a *App) makeUI() fyne.CanvasObject {
 		},
 	)
 
+	tabs := container.NewAppTabs(
+		container.NewTabItemWithIcon("Log", theme.ListIcon(), container.NewPadded(a.taskList)),
+		container.NewTabItemWithIcon("Summary", theme.ViewRestoreIcon(), container.NewPadded(a.weeklyCard)),
+	)
+
 	mainContent := container.NewBorder(
-		container.NewVBox(topBar, inputCard, a.weeklyCard), // Top
+		container.NewVBox(topBar, inputCard), // Top
 		nil, nil, nil,
-		container.NewPadded(a.taskList), // Center
+		tabs, // Center
 	)
 
 	return mainContent
