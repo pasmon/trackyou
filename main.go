@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -32,6 +33,7 @@ var (
 )
 
 const weeklyCardMinHeight float32 = 160
+const taskTimeLayout = "2006-01-02 15:04:05"
 
 type App struct {
 	window      fyne.Window
@@ -445,6 +447,92 @@ func (a *App) continueTask(task *models.Task) {
 	a.startTask(task.ProjectName, task.Description)
 }
 
+// editTask updates a completed task's fields, persists the change, and refreshes all UI state.
+func (a *App) editTask(task *models.Task, projectName, description string, startTime, endTime time.Time) {
+	task.ProjectName = projectName
+	task.Description = description
+	task.StartTime = startTime
+	task.EndTime = endTime
+	task.UpdateDuration()
+
+	if err := a.db.UpdateTask(task); err != nil {
+		a.showDialogError(err)
+		return
+	}
+
+	a.mu.Lock()
+	a.updateTaskGroups()
+	a.mu.Unlock()
+
+	a.refreshProjectSuggestions()
+	a.updateSummaryUI(false)
+
+	if a.taskList != nil {
+		a.taskList.Refresh()
+	}
+	a.refreshWeeklyChart()
+}
+
+// showEditTaskDialog opens a form dialog to edit a completed task's details.
+func (a *App) showEditTaskDialog(task *models.Task) {
+	if os.Getenv("FYNE_TEST_SKIP_GUI") != "" {
+		return
+	}
+
+	projectNames, _ := a.db.GetProjectNames()
+	projectEntry := widget.NewSelectEntry(projectNames)
+	projectEntry.SetText(task.ProjectName)
+
+	descEntry := widget.NewEntry()
+	descEntry.SetText(task.Description)
+
+	startEntry := widget.NewEntry()
+	startEntry.SetPlaceHolder(taskTimeLayout)
+	startEntry.SetText(task.StartTime.Format(taskTimeLayout))
+
+	endEntry := widget.NewEntry()
+	endEntry.SetPlaceHolder(taskTimeLayout)
+	endEntry.SetText(task.EndTime.Format(taskTimeLayout))
+
+	items := []*widget.FormItem{
+		widget.NewFormItem("Project", projectEntry),
+		widget.NewFormItem("Description", descEntry),
+		widget.NewFormItem("Start Time ("+taskTimeLayout+")", startEntry),
+		widget.NewFormItem("End Time ("+taskTimeLayout+")", endEntry),
+	}
+
+	dialog.ShowForm("Edit Task", "Save", "Cancel", items, func(confirmed bool) {
+		if !confirmed {
+			return
+		}
+
+		projectName := strings.TrimSpace(projectEntry.Text)
+		if projectName == "" {
+			a.showDialogError(fmt.Errorf("project name is required"))
+			return
+		}
+
+		startTime, err := time.ParseInLocation(taskTimeLayout, startEntry.Text, task.StartTime.Location())
+		if err != nil {
+			a.showDialogError(fmt.Errorf("invalid start time: %w", err))
+			return
+		}
+
+		endTime, err := time.ParseInLocation(taskTimeLayout, endEntry.Text, task.EndTime.Location())
+		if err != nil {
+			a.showDialogError(fmt.Errorf("invalid end time: %w", err))
+			return
+		}
+
+		if endTime.Before(startTime) {
+			a.showDialogError(fmt.Errorf("end time must not be before start time"))
+			return
+		}
+
+		a.editTask(task, projectName, descEntry.Text, startTime, endTime)
+	}, a.window)
+}
+
 func (a *App) refreshProjectSuggestions() {
 	if a.projectEntry == nil {
 		return
@@ -622,34 +710,48 @@ func (a *App) makeUI() fyne.CanvasObject {
 
 			icon := widget.NewIcon(theme.ContentPasteIcon())
 
+			editBtn := widget.NewButtonWithIcon("", theme.DocumentCreateIcon(), nil)
+			editBtn.Importance = widget.LowImportance
+
 			playBtn := widget.NewButtonWithIcon("", theme.MediaPlayIcon(), nil)
 			playBtn.Importance = widget.LowImportance
 
 			textContainer := container.NewVBox(title, subtitle)
+			btnContainer := container.NewHBox(editBtn, playBtn)
 
-			return container.NewBorder(nil, nil, icon, playBtn, textContainer)
+			return container.NewBorder(nil, nil, icon, btnContainer, textContainer)
 		},
 		func(id widget.ListItemID, item fyne.CanvasObject) {
 			content := item.(*fyne.Container)
 
 			var icon *widget.Icon
+			var editBtn *widget.Button
 			var playBtn *widget.Button
 			var textContainer *fyne.Container
 
-			// Robustly find components by type
+			// Robustly find components by type and content
 			for _, obj := range content.Objects {
 				switch o := obj.(type) {
 				case *widget.Icon:
 					icon = o
-				case *widget.Button:
-					playBtn = o
 				case *fyne.Container:
-					textContainer = o
+					if len(o.Objects) > 0 {
+						if _, ok := o.Objects[0].(*widget.Label); ok {
+							textContainer = o
+						} else if len(o.Objects) >= 2 {
+							if b0, ok := o.Objects[0].(*widget.Button); ok {
+								editBtn = b0
+							}
+							if b1, ok := o.Objects[1].(*widget.Button); ok {
+								playBtn = b1
+							}
+						}
+					}
 				}
 			}
 
 			// Ensure we found them (optional safety check, but cleaner than panic)
-			if icon == nil || playBtn == nil || textContainer == nil {
+			if icon == nil || editBtn == nil || playBtn == nil || textContainer == nil {
 				return
 			}
 
@@ -664,12 +766,20 @@ func (a *App) makeUI() fyne.CanvasObject {
 			switch itemType {
 			case models.ItemTypeHeader:
 				icon.SetResource(theme.HistoryIcon())
+				editBtn.Hide()
 				playBtn.Hide()
 				title.TextStyle = fyne.TextStyle{Bold: true}
 				subtitle.TextStyle = fyne.TextStyle{Bold: true}
 
 			case models.ItemTypeTask:
 				icon.SetResource(theme.DocumentIcon())
+				editBtn.Show()
+				editBtn.OnTapped = func() {
+					task := a.getTask(id)
+					if task != nil {
+						a.showEditTaskDialog(task)
+					}
+				}
 				playBtn.Show()
 				playBtn.OnTapped = func() {
 					task := a.getTask(id)
