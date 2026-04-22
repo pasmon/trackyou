@@ -479,7 +479,10 @@ func (a *App) showEditTaskDialog(task *models.Task) {
 		return
 	}
 
-	projectNames, _ := a.db.GetProjectNames()
+	projectNames, err := a.db.GetProjectNames()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to load project suggestions: %v\n", err)
+	}
 	projectEntry := widget.NewSelectEntry(projectNames)
 	projectEntry.SetText(task.ProjectName)
 
@@ -488,11 +491,11 @@ func (a *App) showEditTaskDialog(task *models.Task) {
 
 	startEntry := widget.NewEntry()
 	startEntry.SetPlaceHolder(taskTimeLayout)
-	startEntry.SetText(task.StartTime.Format(taskTimeLayout))
+	startEntry.SetText(task.StartTime.In(time.Local).Format(taskTimeLayout))
 
 	endEntry := widget.NewEntry()
 	endEntry.SetPlaceHolder(taskTimeLayout)
-	endEntry.SetText(task.EndTime.Format(taskTimeLayout))
+	endEntry.SetText(task.EndTime.In(time.Local).Format(taskTimeLayout))
 
 	items := []*widget.FormItem{
 		widget.NewFormItem("Project", projectEntry),
@@ -512,13 +515,13 @@ func (a *App) showEditTaskDialog(task *models.Task) {
 			return
 		}
 
-		startTime, err := time.ParseInLocation(taskTimeLayout, startEntry.Text, task.StartTime.Location())
+		startTime, err := time.ParseInLocation(taskTimeLayout, startEntry.Text, time.Local)
 		if err != nil {
 			a.showDialogError(fmt.Errorf("invalid start time: %w", err))
 			return
 		}
 
-		endTime, err := time.ParseInLocation(taskTimeLayout, endEntry.Text, task.EndTime.Location())
+		endTime, err := time.ParseInLocation(taskTimeLayout, endEntry.Text, time.Local)
 		if err != nil {
 			a.showDialogError(fmt.Errorf("invalid end time: %w", err))
 			return
