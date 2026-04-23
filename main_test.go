@@ -480,3 +480,154 @@ func TestIntegration_ProjectSuggestions_Refresh(t *testing.T) {
 		t.Fatalf("expected older project to be Old Project, got %q", projectNames[1])
 	}
 }
+
+func TestIntegration_EditTask(t *testing.T) {
+	app, cleanup := setupTestApp(t)
+	defer cleanup()
+
+	// Save a completed task
+	original := models.NewTask("Original Project", "Original Desc")
+	original.StartTime = time.Now().Add(-2 * time.Hour).Round(0)
+	original.EndTime = time.Now().Add(-1 * time.Hour).Round(0)
+	original.UpdateDuration()
+	if err := app.db.SaveTask(original); err != nil {
+		t.Fatalf("failed to save task: %v", err)
+	}
+
+	tasks, err := app.db.GetTasks()
+	if err != nil {
+		t.Fatalf("failed to load tasks: %v", err)
+	}
+	app.mu.Lock()
+	app.tasks = tasks
+	app.updateTaskGroups()
+	app.mu.Unlock()
+
+	savedTask := tasks[0]
+
+	// Edit the task with new values
+	newStart := time.Now().Add(-3 * time.Hour).Round(0)
+	newEnd := time.Now().Add(-30 * time.Minute).Round(0)
+	expectedDuration := newEnd.Sub(newStart)
+
+	app.editTask(savedTask, "Edited Project", "Edited Desc", newStart, newEnd)
+
+	// Verify DB persistence
+	dbTasks, err := app.db.GetTasks()
+	if err != nil {
+		t.Fatalf("failed to get tasks from db: %v", err)
+	}
+	if len(dbTasks) != 1 {
+		t.Fatalf("expected 1 task in db, got %d", len(dbTasks))
+	}
+	edited := dbTasks[0]
+	if edited.ProjectName != "Edited Project" {
+		t.Errorf("expected ProjectName Edited Project, got %s", edited.ProjectName)
+	}
+	if edited.Description != "Edited Desc" {
+		t.Errorf("expected Description Edited Desc, got %s", edited.Description)
+	}
+	if edited.Duration != expectedDuration {
+		t.Errorf("expected Duration %v, got %v", expectedDuration, edited.Duration)
+	}
+
+	// Verify in-memory state is updated
+	app.mu.RLock()
+	memTasks := app.tasks
+	app.mu.RUnlock()
+	if len(memTasks) != 1 {
+		t.Fatalf("expected 1 in-memory task, got %d", len(memTasks))
+	}
+	if memTasks[0].ProjectName != "Edited Project" {
+		t.Errorf("expected in-memory ProjectName Edited Project, got %s", memTasks[0].ProjectName)
+	}
+	if memTasks[0].Duration != expectedDuration {
+		t.Errorf("expected in-memory Duration %v, got %v", expectedDuration, memTasks[0].Duration)
+	}
+
+	// Verify task list is populated (groups rebuilt)
+	if app.getTaskCount() == 0 {
+		t.Error("expected task list to have items after edit")
+	}
+}
+
+func TestIntegration_EditTask_ProjectSuggestionsUpdate(t *testing.T) {
+	app, cleanup := setupTestApp(t)
+	defer cleanup()
+
+	// Save a task under "Alpha"
+	original := models.NewTask("Alpha", "desc")
+	original.StartTime = time.Now().Add(-2 * time.Hour).Round(0)
+	original.EndTime = time.Now().Add(-1 * time.Hour).Round(0)
+	original.UpdateDuration()
+	if err := app.db.SaveTask(original); err != nil {
+		t.Fatalf("failed to save task: %v", err)
+	}
+
+	tasks, err := app.db.GetTasks()
+	if err != nil {
+		t.Fatalf("failed to load tasks: %v", err)
+	}
+	app.mu.Lock()
+	app.tasks = tasks
+	app.updateTaskGroups()
+	app.mu.Unlock()
+
+	// Edit to rename project to "Beta"
+	app.editTask(tasks[0], "Beta", "desc", tasks[0].StartTime, tasks[0].EndTime)
+
+	// Project suggestions should reflect the rename
+	projectNames, err := app.db.GetProjectNames()
+	if err != nil {
+		t.Fatalf("failed to get project names: %v", err)
+	}
+	if len(projectNames) != 1 {
+		t.Fatalf("expected 1 project name, got %d", len(projectNames))
+	}
+	if projectNames[0] != "Beta" {
+		t.Errorf("expected project name Beta after edit, got %s", projectNames[0])
+	}
+}
+
+func TestIntegration_EditTask_WeeklySummaryReflectsChange(t *testing.T) {
+	app, cleanup := setupTestApp(t)
+	defer cleanup()
+
+	now := time.Now()
+	task := models.NewTask("ProjectA", "desc")
+	task.StartTime = now.Add(-2 * time.Hour).Round(0)
+	task.EndTime = now.Add(-1 * time.Hour).Round(0)
+	task.UpdateDuration()
+	if err := app.db.SaveTask(task); err != nil {
+		t.Fatalf("failed to save task: %v", err)
+	}
+
+	tasks, err := app.db.GetTasks()
+	if err != nil {
+		t.Fatalf("failed to load tasks: %v", err)
+	}
+	app.mu.Lock()
+	app.tasks = tasks
+	app.updateTaskGroups()
+	app.mu.Unlock()
+
+	// Edit: rename project to "ProjectB" and extend duration
+	newStart := now.Add(-3 * time.Hour).Round(0)
+	newEnd := now.Add(-1 * time.Hour).Round(0)
+	app.editTask(tasks[0], "ProjectB", "desc", newStart, newEnd)
+
+	// Weekly summary should now report ProjectB with 2h duration
+	app.mu.RLock()
+	summaries := models.ComputeWeeklySummaries(app.tasks, now, models.StartOfCurrentWeek(now))
+	app.mu.RUnlock()
+
+	if len(summaries) != 1 {
+		t.Fatalf("expected 1 summary, got %d", len(summaries))
+	}
+	if summaries[0].ProjectName != "ProjectB" {
+		t.Errorf("expected ProjectB in summary, got %s", summaries[0].ProjectName)
+	}
+	if summaries[0].Duration != 2*time.Hour {
+		t.Errorf("expected 2h duration in summary, got %v", summaries[0].Duration)
+	}
+}

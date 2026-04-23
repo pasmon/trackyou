@@ -58,6 +58,7 @@ func TestDB_UpdateTask(t *testing.T) {
 	defer cleanup()
 
 	task := models.NewTask("Project 1", "Description 1")
+	task.StopTask()
 	err := db.SaveTask(task)
 	if err != nil {
 		t.Fatalf("failed to save task: %v", err)
@@ -68,14 +69,35 @@ func TestDB_UpdateTask(t *testing.T) {
 	savedTask.ProjectName = "Updated Project"
 	savedTask.Description = "Updated Description"
 
+	newStart := time.Now().Add(-2 * time.Hour).Round(0)
+	newEnd := time.Now().Add(-1 * time.Hour).Round(0)
+	savedTask.StartTime = newStart
+	savedTask.EndTime = newEnd
+	savedTask.UpdateDuration()
+	expectedDuration := newEnd.Sub(newStart)
+
 	err = db.UpdateTask(savedTask)
 	if err != nil {
 		t.Fatalf("failed to update task: %v", err)
 	}
 
 	tasks, _ = db.GetTasks()
-	if tasks[0].ProjectName != "Updated Project" {
-		t.Errorf("expected ProjectName Updated Project, got %s", tasks[0].ProjectName)
+	updated := tasks[0]
+
+	if updated.ProjectName != "Updated Project" {
+		t.Errorf("expected ProjectName Updated Project, got %s", updated.ProjectName)
+	}
+	if updated.Description != "Updated Description" {
+		t.Errorf("expected Description Updated Description, got %s", updated.Description)
+	}
+	if !updated.StartTime.Round(time.Second).Equal(newStart.Round(time.Second)) {
+		t.Errorf("expected StartTime %v, got %v", newStart.Round(time.Second), updated.StartTime.Round(time.Second))
+	}
+	if !updated.EndTime.Round(time.Second).Equal(newEnd.Round(time.Second)) {
+		t.Errorf("expected EndTime %v, got %v", newEnd.Round(time.Second), updated.EndTime.Round(time.Second))
+	}
+	if updated.Duration != expectedDuration {
+		t.Errorf("expected Duration %v, got %v", expectedDuration, updated.Duration)
 	}
 }
 
