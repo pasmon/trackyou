@@ -33,6 +33,21 @@ checksum:
   name_template: 'checksums-macos.txt'
   algorithm: sha256
 
+brews:
+  - name: trackyou
+    repository:
+      owner: pasmon
+      name: homebrew-trackyou
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/pasmon/trackyou"
+    description: "Cross-platform desktop time tracker built with Go and Fyne"
+    license: "MIT"
+    install: |
+      bin.install "trackyou"
+    test: |
+      assert_predicate bin/"trackyou", :exist?
+
 release:
   disable: true
 
