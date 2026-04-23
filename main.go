@@ -500,11 +500,11 @@ func (a *App) showEditTaskDialog(task *models.Task) {
 	items := []*widget.FormItem{
 		widget.NewFormItem("Project", projectEntry),
 		widget.NewFormItem("Description", descEntry),
-		widget.NewFormItem("Start Time ("+taskTimeLayout+")", startEntry),
-		widget.NewFormItem("End Time ("+taskTimeLayout+")", endEntry),
+		widget.NewFormItem("Start Time", startEntry),
+		widget.NewFormItem("End Time", endEntry),
 	}
 
-	dialog.ShowForm("Edit Task", "Save", "Cancel", items, func(confirmed bool) {
+	formDialog := dialog.NewForm("Edit Task", "Save", "Cancel", items, func(confirmed bool) {
 		if !confirmed {
 			return
 		}
@@ -534,6 +534,8 @@ func (a *App) showEditTaskDialog(task *models.Task) {
 
 		a.editTask(task, projectName, descEntry.Text, startTime, endTime)
 	}, a.window)
+	formDialog.Resize(fyne.NewSize(460, 360))
+	formDialog.Show()
 }
 
 func (a *App) refreshProjectSuggestions() {
