@@ -504,7 +504,7 @@ func (a *App) showEditTaskDialog(task *models.Task) {
 	items := []*widget.FormItem{
 		widget.NewFormItem("Project", projectEntry),
 		widget.NewFormItem("Description", descEntry),
-		widget.NewFormItem("Timestamp Format", widget.NewLabel(taskTimeLayout)),
+		widget.NewFormItem("Time Format", widget.NewLabel(taskTimeLayout)),
 		widget.NewFormItem("Start Time", startEntry),
 		widget.NewFormItem("End Time", endEntry),
 	}
