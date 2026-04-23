@@ -500,7 +500,7 @@ func (a *App) showEditTaskDialog(task *models.Task) {
 	items := []*widget.FormItem{
 		widget.NewFormItem("Project", projectEntry),
 		widget.NewFormItem("Description", descEntry),
-		widget.NewFormItem("Time Format", widget.NewLabel(taskTimeLayout)),
+		widget.NewFormItem("Expected Format", widget.NewLabel("Expected: "+taskTimeLayout)),
 		widget.NewFormItem("Start Time", startEntry),
 		widget.NewFormItem("End Time", endEntry),
 	}
@@ -535,7 +535,18 @@ func (a *App) showEditTaskDialog(task *models.Task) {
 
 		a.editTask(task, projectName, descEntry.Text, startTime, endTime)
 	}, a.window)
-	formDialog.Resize(fyne.NewSize(460, 360))
+	dialogWidth := float32(560)
+	canvasSize := a.window.Canvas().Size()
+	if canvasSize.Width > 0 {
+		dialogWidth = canvasSize.Width - 40
+		if dialogWidth > 560 {
+			dialogWidth = 560
+		}
+		if dialogWidth < 420 {
+			dialogWidth = 420
+		}
+	}
+	formDialog.Resize(fyne.NewSize(dialogWidth, 360))
 	formDialog.Show()
 }
 
