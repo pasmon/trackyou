@@ -34,6 +34,10 @@ var (
 
 const weeklyCardMinHeight float32 = 160
 const taskTimeLayout = "2006-01-02 15:04:05"
+const editTaskDialogMaxWidth float32 = 560
+const editTaskDialogMinWidth float32 = 420
+const editTaskDialogHorizontalMargin float32 = 40
+const editTaskDialogHeight float32 = 360
 
 type App struct {
 	window      fyne.Window
@@ -500,11 +504,12 @@ func (a *App) showEditTaskDialog(task *models.Task) {
 	items := []*widget.FormItem{
 		widget.NewFormItem("Project", projectEntry),
 		widget.NewFormItem("Description", descEntry),
-		widget.NewFormItem("Start Time ("+taskTimeLayout+")", startEntry),
-		widget.NewFormItem("End Time ("+taskTimeLayout+")", endEntry),
+		widget.NewFormItem("Time Format", widget.NewLabel(taskTimeLayout)),
+		widget.NewFormItem("Start Time", startEntry),
+		widget.NewFormItem("End Time", endEntry),
 	}
 
-	dialog.ShowForm("Edit Task", "Save", "Cancel", items, func(confirmed bool) {
+	formDialog := dialog.NewForm("Edit Task", "Save", "Cancel", items, func(confirmed bool) {
 		if !confirmed {
 			return
 		}
@@ -534,6 +539,19 @@ func (a *App) showEditTaskDialog(task *models.Task) {
 
 		a.editTask(task, projectName, descEntry.Text, startTime, endTime)
 	}, a.window)
+	dialogWidth := editTaskDialogMaxWidth
+	canvasSize := a.window.Canvas().Size()
+	if canvasSize.Width > 0 {
+		dialogWidth = canvasSize.Width - editTaskDialogHorizontalMargin
+		if dialogWidth > editTaskDialogMaxWidth {
+			dialogWidth = editTaskDialogMaxWidth
+		}
+		if dialogWidth < editTaskDialogMinWidth {
+			dialogWidth = editTaskDialogMinWidth
+		}
+	}
+	formDialog.Resize(fyne.NewSize(dialogWidth, editTaskDialogHeight))
+	formDialog.Show()
 }
 
 func (a *App) refreshProjectSuggestions() {
