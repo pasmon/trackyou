@@ -39,7 +39,6 @@ homebrew_casks:
       owner: pasmon
       name: homebrew-trackyou
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-    url_template: "https://github.com/pasmon/trackyou/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
     homepage: "https://github.com/pasmon/trackyou"
     description: "Cross-platform desktop time tracker built with Go and Fyne"
     license: "MIT"
