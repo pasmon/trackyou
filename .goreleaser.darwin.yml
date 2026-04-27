@@ -43,9 +43,6 @@ homebrew_casks:
     description: "Cross-platform desktop time tracker built with Go and Fyne"
     license: "MIT"
 
-release:
-  disable: true
-
 changelog:
   sort: asc
   filters:
