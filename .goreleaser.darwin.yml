@@ -33,6 +33,9 @@ checksum:
   name_template: 'checksums-macos.txt'
   algorithm: sha256
 
+release:
+  draft: true
+
 homebrew_casks:
   - name: trackyou
     repository:
