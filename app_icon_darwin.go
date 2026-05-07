@@ -9,18 +9,17 @@ package main
 
 #import <Cocoa/Cocoa.h>
 
-static void TrackYouSetApplicationIcon(const void *bytes, int length) {
+static void TrackYouSetApplicationIcon(const void *bytes, size_t length) {
 	@autoreleasepool {
 		if (bytes == NULL || length <= 0) {
 			return;
 		}
 
 		NSApplication *application = [NSApplication sharedApplication];
-		NSData *data = [NSData dataWithBytes:bytes length:(NSUInteger)length];
-		NSImage *image = [[NSImage alloc] initWithData:data];
+		NSData *data = [NSData dataWithBytes:bytes length:length];
+		NSImage *image = [NSImage imageWithData:data];
 		if (image != nil) {
 			[application setApplicationIconImage:image];
-			[image release];
 		}
 	}
 }
@@ -40,5 +39,5 @@ func setPlatformApplicationIcon(iconBytes []byte) {
 	}
 	defer C.free(iconData)
 
-	C.TrackYouSetApplicationIcon(iconData, C.int(len(iconBytes)))
+	C.TrackYouSetApplicationIcon(iconData, C.size_t(len(iconBytes)))
 }
