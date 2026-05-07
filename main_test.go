@@ -631,3 +631,81 @@ func TestIntegration_EditTask_WeeklySummaryReflectsChange(t *testing.T) {
 		t.Errorf("expected 2h duration in summary, got %v", summaries[0].Duration)
 	}
 }
+
+func TestParseTaskDurationInput(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		want      time.Duration
+		wantError bool
+	}{
+		{name: "valid", input: "1h30m", want: 90 * time.Minute},
+		{name: "valid_with_spaces", input: " 45m ", want: 45 * time.Minute},
+		{name: "empty", input: "", wantError: true},
+		{name: "invalid", input: "abc", wantError: true},
+		{name: "negative", input: "-10m", wantError: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseTaskDurationInput(tt.input)
+			if tt.wantError {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("expected %v, got %v", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestResolveTaskEditEndTime(t *testing.T) {
+	start := time.Date(2026, 5, 1, 9, 0, 0, 0, time.Local)
+	originalEnd := start.Add(2 * time.Hour)
+	originalDuration := 2 * time.Hour
+
+	t.Run("unchanged duration keeps end time", func(t *testing.T) {
+		resolvedEnd, err := resolveTaskEditEndTime(start, originalEnd, "2h0m0s", originalDuration)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !resolvedEnd.Equal(originalEnd) {
+			t.Fatalf("expected end %v, got %v", originalEnd, resolvedEnd)
+		}
+	})
+
+	t.Run("changed duration recalculates end time", func(t *testing.T) {
+		resolvedEnd, err := resolveTaskEditEndTime(start, originalEnd, "3h30m", originalDuration)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		expectedEnd := start.Add(3*time.Hour + 30*time.Minute)
+		if !resolvedEnd.Equal(expectedEnd) {
+			t.Fatalf("expected end %v, got %v", expectedEnd, resolvedEnd)
+		}
+	})
+
+	t.Run("sub-second original duration compares at second precision", func(t *testing.T) {
+		originalWithSubSecond := 2*time.Hour + 500*time.Millisecond
+		resolvedEnd, err := resolveTaskEditEndTime(start, originalEnd, "2h0m0s", originalWithSubSecond)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !resolvedEnd.Equal(originalEnd) {
+			t.Fatalf("expected end %v, got %v", originalEnd, resolvedEnd)
+		}
+	})
+
+	t.Run("unchanged duration validates end-before-start", func(t *testing.T) {
+		_, err := resolveTaskEditEndTime(start, start.Add(-time.Hour), "2h0m0s", originalDuration)
+		if err == nil {
+			t.Fatalf("expected error, got nil")
+		}
+	})
+}

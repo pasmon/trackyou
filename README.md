@@ -7,7 +7,7 @@ A simple desktop application for tracking time spent on different projects and t
 - Track time spent on different projects and tasks
 - Start and stop task timers
 - View task history with durations
-- **Edit past tasks** – modify the project name, description, start time, and end time of any completed task directly from the Log
+- **Edit past tasks** – modify the project name, description, start time, end time, and duration of any completed task directly from the Log
 - **Weekly overview** – per-project totals with daily breakdown (Mon–Sun) for the current calendar week, plus proportional bars
 - Persistent storage using SQLite
 - Cross-platform support (Windows, macOS, Linux)
@@ -47,7 +47,7 @@ go build
 3. Click "Start Task" to begin timing
 4. Click "Stop Task" when finished
 5. View your task history in the **Log** tab
-6. **Edit a past task**: click the ✏️ (edit) button on any completed task row in the Log to open a dialog where you can update the project name, description, start time, and end time; the duration is recalculated automatically
+6. **Edit a past task**: click the ✏️ (edit) button on any completed task row in the Log to open a dialog where you can update the project name, description, start time, end time, and duration; when duration is changed, the end time is adjusted from the start time accordingly
 
 ## Data Storage
 
