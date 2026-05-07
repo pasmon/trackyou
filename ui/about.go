@@ -16,8 +16,11 @@ func ShowAboutWindow(app fyne.App, version, buildDate, commit string) {
 	w := app.NewWindow("About TrackYou")
 
 	// 1. App Icon
-	// Using Fyne logo as placeholder. In a real app, use resourceIconPng or similar if available.
-	icon := canvas.NewImageFromResource(theme.FyneLogo())
+	iconResource := app.Icon()
+	if iconResource == nil {
+		iconResource = theme.FyneLogo()
+	}
+	icon := canvas.NewImageFromResource(iconResource)
 	icon.FillMode = canvas.ImageFillContain
 	icon.SetMinSize(fyne.NewSize(80, 80))
 

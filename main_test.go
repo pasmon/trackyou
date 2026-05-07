@@ -5,11 +5,21 @@ import (
 	"testing"
 	"time"
 
+	"trackyou/assets"
 	"trackyou/database"
 	"trackyou/models"
 
 	"fyne.io/fyne/v2/test"
 )
+
+func TestAppIconResource_IsEmbedded(t *testing.T) {
+	if assets.AppIcon == nil {
+		t.Fatal("expected embedded app icon resource")
+	}
+	if len(assets.AppIcon.Content()) == 0 {
+		t.Fatal("expected embedded app icon content")
+	}
+}
 
 // setupTestApp creates an App instance with a temporary database and headless UI
 func setupTestApp(t *testing.T) (*App, func()) {
@@ -72,11 +82,11 @@ func TestIntegration_Lifecycle_StartStopTask(t *testing.T) {
 	// 1. Start Task
 	projectName := "Integration Test Project"
 	description := "Testing Start/Stop"
-	
+
 	// Simulate user input
 	app.projectEntry.SetText(projectName)
 	app.descriptionEntry.SetText(description)
-	
+
 	// Click Start
 	test.Tap(app.startButton)
 
@@ -116,11 +126,11 @@ func TestIntegration_Lifecycle_StartStopTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get tasks from db: %v", err)
 	}
-	
+
 	if len(tasks) != 1 {
 		t.Fatalf("expected 1 task in db, got %d", len(tasks))
 	}
-	
+
 	savedTask := tasks[0]
 	if savedTask.ProjectName != projectName {
 		t.Errorf("expected saved project name %s, got %s", projectName, savedTask.ProjectName)
@@ -183,7 +193,7 @@ func TestIntegration_ThemeSwitching(t *testing.T) {
 func TestIntegration_DataPersistence(t *testing.T) {
 	// 1. Create App, Save Data, Close
 	dbPath := "test_persistence.db"
-	
+
 	// Phase 1: Create and Save
 	{
 		db, err := database.NewDB(dbPath)
@@ -194,7 +204,7 @@ func TestIntegration_DataPersistence(t *testing.T) {
 		if err != nil {
 			t.Fatalf("phase 1 init db failed: %v", err)
 		}
-		
+
 		task := models.NewTask("Persisted Project", "Desc")
 		task.StopTask()
 		err = db.SaveTask(task)
@@ -210,7 +220,7 @@ func TestIntegration_DataPersistence(t *testing.T) {
 		if err != nil {
 			t.Fatalf("phase 2 setup failed: %v", err)
 		}
-		
+
 		myApp := test.NewApp()
 		window := test.NewWindow(nil)
 		app := &App{
@@ -222,7 +232,7 @@ func TestIntegration_DataPersistence(t *testing.T) {
 			idleThreshold: 5,
 			idleSince:     time.Now(),
 		}
-		
+
 		// Simulate loading tasks as main() does
 		tasks, err := app.db.GetTasks()
 		if err != nil {
@@ -230,7 +240,7 @@ func TestIntegration_DataPersistence(t *testing.T) {
 		}
 		app.tasks = tasks
 		app.updateTaskGroups()
-		
+
 		// Initialize UI (which uses taskGroups)
 		app.makeUI() // Should not panic and list should populate
 
@@ -241,10 +251,10 @@ func TestIntegration_DataPersistence(t *testing.T) {
 		if app.tasks[0].ProjectName != "Persisted Project" {
 			t.Errorf("expected Persisted Project, got %s", app.tasks[0].ProjectName)
 		}
-		
+
 		if app.getTaskCount() != 1 { // 1 task item (headers might add more rows)
-			// Actually getTaskCount returns total items including headers. 
-			// 1 task -> 1 Header (Date) + 1 Task = 2 items? 
+			// Actually getTaskCount returns total items including headers.
+			// 1 task -> 1 Header (Date) + 1 Task = 2 items?
 			// Let's check models behavior or just assert > 0
 			if app.getTaskCount() == 0 {
 				t.Error("expected task list items > 0")
@@ -253,7 +263,7 @@ func TestIntegration_DataPersistence(t *testing.T) {
 
 		db.Close()
 	}
-	
+
 	os.Remove(dbPath)
 }
 
@@ -264,7 +274,7 @@ func TestIntegration_UIEvent_ContinueTask(t *testing.T) {
 	// 1. Create a task manually and add to app
 	oldTask := models.NewTask("Old Project", "Old Desc")
 	oldTask.StopTask()
-	
+
 	err := app.db.SaveTask(oldTask)
 	if err != nil {
 		t.Fatalf("failed to save task: %v", err)
@@ -275,15 +285,15 @@ func TestIntegration_UIEvent_ContinueTask(t *testing.T) {
 	}
 	app.tasks = tasks
 	app.updateTaskGroups()
-	
+
 	// Refresh list to ensure UI is in sync (though we are headless)
 	app.taskList.Refresh()
 
 	// 2. Simulate "Continue" (which is actually play button tap on list item)
 	// But getting the actual list item widget is hard in unit test without rendering.
-	// We can call app.continueTask(task) directly as we want to test the *event handling logic* 
+	// We can call app.continueTask(task) directly as we want to test the *event handling logic*
 	// rather than the Fyne list widget internal tap propagation (which is Fyne's responsibility).
-	
+
 	app.continueTask(tasks[0])
 
 	// 3. Verify New Task Started with same details
@@ -296,7 +306,7 @@ func TestIntegration_UIEvent_ContinueTask(t *testing.T) {
 	if app.currentTask.Description != "Old Desc" {
 		t.Errorf("expected description Old Desc, got %s", app.currentTask.Description)
 	}
-	
+
 	// Verify input fields updated
 	if app.projectEntry.Text != "Old Project" {
 		t.Errorf("expected entry text Old Project, got %s", app.projectEntry.Text)
@@ -317,7 +327,7 @@ func TestIntegration_IdleNotification(t *testing.T) {
 	app.idleSince = time.Now().Add(-6 * time.Minute)
 
 	lastNotified := time.Time{}
-	
+
 	// Trigger check
 	sent := app.checkIdle(&lastNotified)
 	if !sent {
@@ -349,13 +359,13 @@ func TestIntegration_Settings(t *testing.T) {
 	// Change threshold via showSettings (simulating form)
 	// Since showSettings uses a dialog, it's hard to test automatically without more effort.
 	// But we can test the database method directly and the app field.
-	
+
 	newThreshold := 10
 	err := app.db.SetIdleThreshold(newThreshold)
 	if err != nil {
 		t.Fatalf("failed to set threshold: %v", err)
 	}
-	
+
 	val, err := app.db.GetIdleThreshold()
 	if err != nil {
 		t.Fatalf("failed to get threshold from db: %v", err)
