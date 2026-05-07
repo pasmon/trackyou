@@ -533,10 +533,10 @@ func (a *App) showEditTaskDialog(task *models.Task) {
 	endEntry.SetPlaceHolder(taskTimeLayout)
 	endEntry.SetText(task.EndTime.In(time.Local).Format(taskTimeLayout))
 
-	originalDuration := task.Duration.Round(time.Second)
+	originalDurationRounded := task.Duration.Round(time.Second)
 	durationEntry := widget.NewEntry()
 	durationEntry.SetPlaceHolder("1h30m")
-	durationEntry.SetText(originalDuration.String())
+	durationEntry.SetText(originalDurationRounded.String())
 
 	items := []*widget.FormItem{
 		widget.NewFormItem("Project", projectEntry),
@@ -570,7 +570,7 @@ func (a *App) showEditTaskDialog(task *models.Task) {
 			return
 		}
 
-		endTime, err = resolveTaskEditEndTime(startTime, endTime, durationEntry.Text, originalDuration)
+		endTime, err = resolveTaskEditEndTime(startTime, endTime, durationEntry.Text, originalDurationRounded)
 		if err != nil {
 			a.showDialogError(err)
 			return
