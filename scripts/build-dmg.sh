@@ -13,6 +13,15 @@ ICON_NAME="trackyou.icns"
 
 echo "Creating DMG for ${ARCH}..."
 
+run_or_fail() {
+  local message=$1
+  shift
+  "$@" || {
+    echo "${message}" >&2
+    exit 1
+  }
+}
+
 # Create a temporary directory for the DMG content
 mkdir -p "dist/dmg-${ARCH}/${APP_NAME}.app/Contents/MacOS"
 mkdir -p "dist/dmg-${ARCH}/${APP_NAME}.app/Contents/Resources"
@@ -25,12 +34,15 @@ TMP_ICONSET="dist/dmg-${ARCH}/${APP_NAME}.app/Contents/Resources/AppIcon.iconset
 mkdir -p "${TMP_ICONSET}"
 
 for SIZE in 16 32 128 256 512; do
-  sips -z "${SIZE}" "${SIZE}" "${ICON_SOURCE}" --out "${TMP_ICONSET}/icon_${SIZE}x${SIZE}.png" >/dev/null
+  run_or_fail "Failed to generate ${SIZE}x${SIZE} icon asset" \
+    sips -z "${SIZE}" "${SIZE}" "${ICON_SOURCE}" --out "${TMP_ICONSET}/icon_${SIZE}x${SIZE}.png" >/dev/null
   DOUBLE_SIZE=$((SIZE * 2))
-  sips -z "${DOUBLE_SIZE}" "${DOUBLE_SIZE}" "${ICON_SOURCE}" --out "${TMP_ICONSET}/icon_${SIZE}x${SIZE}@2x.png" >/dev/null
+  run_or_fail "Failed to generate ${SIZE}x${SIZE}@2x icon asset" \
+    sips -z "${DOUBLE_SIZE}" "${DOUBLE_SIZE}" "${ICON_SOURCE}" --out "${TMP_ICONSET}/icon_${SIZE}x${SIZE}@2x.png" >/dev/null
 done
 
-iconutil -c icns "${TMP_ICONSET}" -o "dist/dmg-${ARCH}/${APP_NAME}.app/Contents/Resources/${ICON_NAME}"
+run_or_fail "Failed to build macOS icns file" \
+  iconutil -c icns "${TMP_ICONSET}" -o "dist/dmg-${ARCH}/${APP_NAME}.app/Contents/Resources/${ICON_NAME}"
 rm -rf "${TMP_ICONSET}"
 
 # Create a minimal Info.plist (Required for a valid .app bundle)
