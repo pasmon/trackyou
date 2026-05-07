@@ -26,8 +26,6 @@ static void TrackYouSetApplicationIcon(const void *bytes, size_t length) {
 */
 import "C"
 
-import "unsafe"
-
 func setPlatformApplicationIcon(iconBytes []byte) {
 	if len(iconBytes) == 0 {
 		return
