@@ -24,7 +24,7 @@ import (
 //     Because the child has no controlling terminal, this init() is a no-op
 //     for it and it proceeds straight into main().
 func init() {
-	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	tty, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0)
 	isInteractiveTTY := err == nil
 	if tty != nil {
 		_ = tty.Close()
@@ -39,7 +39,7 @@ func init() {
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	cmd.Env = append(os.Environ(), detachMarkerEnv+"=1")
+	cmd.Env = append(os.Environ(), detachMarkerEnv+"="+detachMarkerValue)
 
 	if err := cmd.Start(); err != nil {
 		// If re-exec fails for any reason, log and fall through to run normally.
