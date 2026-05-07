@@ -28,7 +28,7 @@ func TestShouldDetachForInteractiveLaunch(t *testing.T) {
 			want:             false,
 		},
 		{
-			name:             "non interactive launch skips detach",
+			name:             "non-interactive launch skips detach",
 			isInteractiveTTY: false,
 			detachMarker:     "",
 			want:             false,
