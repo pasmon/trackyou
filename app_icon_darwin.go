@@ -20,6 +20,7 @@ static void TrackYouSetApplicationIcon(const void *bytes, int length) {
 		NSImage *image = [[NSImage alloc] initWithData:data];
 		if (image != nil) {
 			[application setApplicationIconImage:image];
+			[image release];
 		}
 	}
 }
