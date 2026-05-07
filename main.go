@@ -39,6 +39,38 @@ const editTaskDialogMinWidth float32 = 420
 const editTaskDialogHorizontalMargin float32 = 40
 const editTaskDialogHeight float32 = 360
 
+func parseTaskDurationInput(value string) (time.Duration, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return 0, fmt.Errorf("duration is required")
+	}
+
+	duration, err := time.ParseDuration(trimmed)
+	if err != nil {
+		return 0, fmt.Errorf("invalid duration: %w", err)
+	}
+	if duration < 0 {
+		return 0, fmt.Errorf("duration must not be negative")
+	}
+	return duration, nil
+}
+
+func resolveTaskEditEndTime(startTime, endTime time.Time, durationInput string, originalDuration time.Duration) (time.Time, error) {
+	editedDuration, err := parseTaskDurationInput(durationInput)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	if editedDuration.Round(time.Second) != originalDuration.Round(time.Second) {
+		endTime = startTime.Add(editedDuration)
+	}
+
+	if endTime.Before(startTime) {
+		return time.Time{}, fmt.Errorf("end time must be after or equal to start time")
+	}
+	return endTime, nil
+}
+
 type App struct {
 	window      fyne.Window
 	app         fyne.App
@@ -501,12 +533,18 @@ func (a *App) showEditTaskDialog(task *models.Task) {
 	endEntry.SetPlaceHolder(taskTimeLayout)
 	endEntry.SetText(task.EndTime.In(time.Local).Format(taskTimeLayout))
 
+	originalDurationRounded := task.Duration.Round(time.Second)
+	durationEntry := widget.NewEntry()
+	durationEntry.SetPlaceHolder("1h30m")
+	durationEntry.SetText(originalDurationRounded.String())
+
 	items := []*widget.FormItem{
 		widget.NewFormItem("Project", projectEntry),
 		widget.NewFormItem("Description", descEntry),
 		widget.NewFormItem("Time Format", widget.NewLabel(taskTimeLayout)),
 		widget.NewFormItem("Start Time", startEntry),
 		widget.NewFormItem("End Time", endEntry),
+		widget.NewFormItem("Duration", durationEntry),
 	}
 
 	formDialog := dialog.NewForm("Edit Task", "Save", "Cancel", items, func(confirmed bool) {
@@ -532,8 +570,9 @@ func (a *App) showEditTaskDialog(task *models.Task) {
 			return
 		}
 
-		if endTime.Before(startTime) {
-			a.showDialogError(fmt.Errorf("end time must not be before start time"))
+		endTime, err = resolveTaskEditEndTime(startTime, endTime, durationEntry.Text, originalDurationRounded)
+		if err != nil {
+			a.showDialogError(err)
 			return
 		}
 
