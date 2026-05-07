@@ -39,7 +39,7 @@ func TestShouldDetachForInteractiveLaunch(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := shouldDetachForInteractiveLaunch(tt.isInteractiveTTY, tt.detachMarker)
 			if got != tt.want {
-				t.Fatalf("shouldDetachForInteractiveLaunch() = %v, want %v", got, tt.want)
+				t.Errorf("shouldDetachForInteractiveLaunch() = %v, want %v", got, tt.want)
 			}
 		})
 	}

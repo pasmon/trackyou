@@ -25,7 +25,7 @@ import (
 //     for it and it proceeds straight into main().
 func init() {
 	isInteractiveTTY := false
-	if tty, ttyOpenErr := os.OpenFile("/dev/tty", os.O_RDONLY, 0); ttyOpenErr == nil {
+	if tty, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0); err == nil {
 		isInteractiveTTY = true
 		defer tty.Close()
 	}
