@@ -34,6 +34,9 @@ func setPlatformApplicationIcon(iconBytes []byte) {
 	}
 
 	iconData := C.CBytes(iconBytes)
+	if iconData == nil {
+		return
+	}
 	defer C.free(iconData)
 
 	C.trackyouSetApplicationIcon(iconData, C.int(len(iconBytes)))
