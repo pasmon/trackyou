@@ -61,7 +61,7 @@ func resolveTaskEditEndTime(startTime, endTime time.Time, durationInput string, 
 		return time.Time{}, err
 	}
 
-	if editedDuration != originalDuration.Round(time.Second) {
+	if editedDuration.Round(time.Second) != originalDuration.Round(time.Second) {
 		endTime = startTime.Add(editedDuration)
 	}
 

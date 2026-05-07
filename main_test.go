@@ -691,6 +691,17 @@ func TestResolveTaskEditEndTime(t *testing.T) {
 		}
 	})
 
+	t.Run("sub-second original duration compares at second precision", func(t *testing.T) {
+		originalWithSubSecond := 2*time.Hour + 500*time.Millisecond
+		resolvedEnd, err := resolveTaskEditEndTime(start, originalEnd, "2h0m0s", originalWithSubSecond)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !resolvedEnd.Equal(originalEnd) {
+			t.Fatalf("expected end %v, got %v", originalEnd, resolvedEnd)
+		}
+	})
+
 	t.Run("unchanged duration validates end-before-start", func(t *testing.T) {
 		_, err := resolveTaskEditEndTime(start, start.Add(-time.Hour), "2h0m0s", originalDuration)
 		if err == nil {
