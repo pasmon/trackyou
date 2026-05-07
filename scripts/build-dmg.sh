@@ -8,6 +8,8 @@ BINARY_PATH=$3
 
 APP_NAME="TrackYou"
 DMG_NAME="trackyou_${VERSION}_darwin_${ARCH}.dmg"
+ICON_SOURCE="assets/app_icon.png"
+ICON_NAME="trackyou.icns"
 
 echo "Creating DMG for ${ARCH}..."
 
@@ -19,6 +21,18 @@ mkdir -p "dist/dmg-${ARCH}/${APP_NAME}.app/Contents/Resources"
 cp "${BINARY_PATH}" "dist/dmg-${ARCH}/${APP_NAME}.app/Contents/MacOS/trackyou"
 chmod +x "dist/dmg-${ARCH}/${APP_NAME}.app/Contents/MacOS/trackyou"
 
+TMP_ICONSET="dist/dmg-${ARCH}/${APP_NAME}.app/Contents/Resources/AppIcon.iconset"
+mkdir -p "${TMP_ICONSET}"
+
+for SIZE in 16 32 128 256 512; do
+  sips -z "${SIZE}" "${SIZE}" "${ICON_SOURCE}" --out "${TMP_ICONSET}/icon_${SIZE}x${SIZE}.png" >/dev/null
+  DOUBLE_SIZE=$((SIZE * 2))
+  sips -z "${DOUBLE_SIZE}" "${DOUBLE_SIZE}" "${ICON_SOURCE}" --out "${TMP_ICONSET}/icon_${SIZE}x${SIZE}@2x.png" >/dev/null
+done
+
+iconutil -c icns "${TMP_ICONSET}" -o "dist/dmg-${ARCH}/${APP_NAME}.app/Contents/Resources/${ICON_NAME}"
+rm -rf "${TMP_ICONSET}"
+
 # Create a minimal Info.plist (Required for a valid .app bundle)
 cat <<EOF > "dist/dmg-${ARCH}/${APP_NAME}.app/Contents/Info.plist"
 <?xml version="1.0" encoding="UTF-8"?>
@@ -29,6 +43,10 @@ cat <<EOF > "dist/dmg-${ARCH}/${APP_NAME}.app/Contents/Info.plist"
     <string>trackyou</string>
     <key>CFBundleIdentifier</key>
     <string>com.pasmon.trackyou</string>
+    <key>CFBundleDisplayName</key>
+    <string>${APP_NAME}</string>
+    <key>CFBundleIconFile</key>
+    <string>${ICON_NAME}</string>
     <key>CFBundleName</key>
     <string>${APP_NAME}</string>
     <key>CFBundlePackageType</key>

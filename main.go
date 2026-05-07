@@ -870,8 +870,10 @@ func (a *App) makeUI() fyne.CanvasObject {
 }
 
 func main() {
-	myApp := app.New()
+	myApp := app.NewWithID(appID)
+	configureApplication(myApp)
 	window := myApp.NewWindow("TrackYou")
+	window.SetIcon(myApp.Icon())
 
 	// Initialize DB
 	dbPath, err := database.GetDefaultDBPath()
@@ -931,7 +933,7 @@ func main() {
 				myApp.Quit()
 			}))
 		desk.SetSystemTrayMenu(menu)
-		desk.SetSystemTrayIcon(theme.HistoryIcon())
+		desk.SetSystemTrayIcon(myApp.Icon())
 	}
 
 	go application.monitorIdle(idleCtx)
