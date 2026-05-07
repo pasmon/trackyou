@@ -24,8 +24,8 @@ import (
 //     Because the child has no controlling terminal, this init() is a no-op
 //     for it and it proceeds straight into main().
 func init() {
-	tty, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0)
-	isInteractiveTTY := err == nil
+	tty, ttyOpenErr := os.OpenFile("/dev/tty", os.O_RDONLY, 0)
+	isInteractiveTTY := ttyOpenErr == nil
 	if tty != nil {
 		defer tty.Close()
 	}
