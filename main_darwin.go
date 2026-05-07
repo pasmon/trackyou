@@ -7,28 +7,31 @@ import (
 	"os"
 	"os/exec"
 	"syscall"
+
+	"golang.org/x/term"
 )
 
 // init runs before main() and self-detaches the process when it is launched
-// directly from a terminal (e.g. via `trackyou` in a shell after a Homebrew
-// install).  Without this, the shell blocks until the GUI is closed, which
-// feels wrong for a desktop application.
+// directly from an interactive terminal (e.g. via `trackyou` in a shell after
+// a Homebrew install).  Without this, the shell blocks until the GUI is
+// closed, which feels wrong for a desktop application.
 //
 // How it works:
-//  1. If a controlling terminal exists (/dev/tty opens) and the
-//     TRACKYOU_DETACHED marker is not set, re-exec the same binary in a new
-//     session with stdin/stdout/stderr disconnected and set TRACKYOU_DETACHED=1.
+//  1. If stdin is an interactive TTY and the TRACKYOU_DETACHED marker is not
+//     set, re-exec the same binary in a new session with stdin/stdout/stderr
+//     disconnected and set TRACKYOU_DETACHED=1.
 //  2. The parent shell sees the original process exit immediately (exit 0) and
 //     returns the prompt.
 //  3. The detached child process starts normally and opens the Fyne window.
 //     Because the marker is already set for the child, this init() is a no-op
 //     and it proceeds straight into main().
+//
+// Checking stdin (term.IsTerminal) rather than the controlling terminal
+// (/dev/tty) is intentional: automated tools such as `brew upgrade` invoke the
+// binary as a subprocess whose stdin is closed or redirected to a pipe/null,
+// so IsTerminal returns false and the self-detach is correctly skipped.
 func init() {
-	isInteractiveTTY := false
-	if tty, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0); err == nil {
-		isInteractiveTTY = true
-		defer tty.Close()
-	}
+	isInteractiveTTY := term.IsTerminal(int(os.Stdin.Fd()))
 
 	if !shouldDetachForInteractiveLaunch(isInteractiveTTY, os.Getenv(detachMarkerEnv)) {
 		return
