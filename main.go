@@ -66,7 +66,7 @@ func resolveTaskEditEndTime(startTime, endTime time.Time, durationInput string, 
 	}
 
 	if endTime.Before(startTime) {
-		return time.Time{}, fmt.Errorf("end time must not be before start time")
+		return time.Time{}, fmt.Errorf("end time must be after or equal to start time")
 	}
 	return endTime, nil
 }
