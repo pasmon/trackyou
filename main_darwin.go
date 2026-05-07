@@ -15,14 +15,14 @@ import (
 // feels wrong for a desktop application.
 //
 // How it works:
-//  1. If stdin is connected to a controlling terminal (i.e. the process was
-//     started interactively from a shell), re-exec the same binary in a new
-//     session with stdin/stdout/stderr disconnected.
+//  1. If a controlling terminal exists (/dev/tty opens) and the
+//     TRACKYOU_DETACHED marker is not set, re-exec the same binary in a new
+//     session with stdin/stdout/stderr disconnected and set TRACKYOU_DETACHED=1.
 //  2. The parent shell sees the original process exit immediately (exit 0) and
 //     returns the prompt.
 //  3. The detached child process starts normally and opens the Fyne window.
-//     Because the child has no controlling terminal, this init() is a no-op
-//     for it and it proceeds straight into main().
+//     Because the marker is already set for the child, this init() is a no-op
+//     and it proceeds straight into main().
 func init() {
 	isInteractiveTTY := false
 	if tty, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0); err == nil {
