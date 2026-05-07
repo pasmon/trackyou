@@ -27,7 +27,7 @@ func init() {
 	tty, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0)
 	isInteractiveTTY := err == nil
 	if tty != nil {
-		_ = tty.Close()
+		defer tty.Close()
 	}
 
 	if !shouldDetachForInteractiveLaunch(isInteractiveTTY, os.Getenv(detachMarkerEnv)) {
