@@ -9,7 +9,7 @@ package main
 
 #import <Cocoa/Cocoa.h>
 
-static void trackyouSetApplicationIcon(const void *bytes, int length) {
+static void TrackYouSetApplicationIcon(const void *bytes, int length) {
 	@autoreleasepool {
 		if (bytes == NULL || length <= 0) {
 			return;
@@ -39,5 +39,5 @@ func setPlatformApplicationIcon(iconBytes []byte) {
 	}
 	defer C.free(iconData)
 
-	C.trackyouSetApplicationIcon(iconData, C.int(len(iconBytes)))
+	C.TrackYouSetApplicationIcon(iconData, C.int(len(iconBytes)))
 }

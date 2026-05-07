@@ -34,7 +34,8 @@ TMP_ICONSET="dist/dmg-${ARCH}/${APP_NAME}.app/Contents/Resources/AppIcon.iconset
 mkdir -p "${TMP_ICONSET}"
 
 # These are the standard base sizes used to assemble a macOS .icns file,
-# along with their generated @2x retina counterparts.
+# along with their generated @2x retina counterparts. The 512@2x asset
+# provides the 1024px representation used by modern macOS icons.
 for SIZE in 16 32 128 256 512; do
   run_or_fail "Failed to generate ${SIZE}x${SIZE} icon asset" \
     sips -z "${SIZE}" "${SIZE}" "${ICON_SOURCE}" --out "${TMP_ICONSET}/icon_${SIZE}x${SIZE}.png" >/dev/null
