@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"syscall"
+	"time"
 
 	"golang.org/x/term"
 )
@@ -50,5 +51,22 @@ func init() {
 		return
 	}
 
-	os.Exit(0)
+	// Guard against silent startup failures: if the detached child exits
+	// immediately, keep running in the current process so the app still opens.
+	exited := make(chan error, 1)
+	go func() {
+		exited <- cmd.Wait()
+	}()
+
+	select {
+	case err := <-exited:
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "trackyou: detached launch exited early (%v), retrying in foreground\n", err)
+		} else {
+			fmt.Fprintln(os.Stderr, "trackyou: detached launch exited early, retrying in foreground")
+		}
+		return
+	case <-time.After(500 * time.Millisecond):
+		os.Exit(0)
+	}
 }
