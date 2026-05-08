@@ -13,6 +13,7 @@ import (
 )
 
 const detachedChildStartupGracePeriod = 500 * time.Millisecond
+const detachedChildStartupPollInterval = 50 * time.Millisecond
 
 // init runs before main() and self-detaches the process when it is launched
 // directly from an interactive terminal (e.g. via `trackyou` in a shell after
@@ -34,7 +35,10 @@ const detachedChildStartupGracePeriod = 500 * time.Millisecond
 // binary as a subprocess whose stdin is closed or redirected to a pipe/null,
 // so IsTerminal returns false and the self-detach is correctly skipped.
 func init() {
-	isInteractiveTTY := os.Stdin != nil && term.IsTerminal(int(os.Stdin.Fd()))
+	isInteractiveTTY := false
+	if os.Stdin != nil {
+		isInteractiveTTY = term.IsTerminal(int(os.Stdin.Fd()))
+	}
 
 	if !shouldDetachForInteractiveLaunch(isInteractiveTTY, os.Getenv(detachMarkerEnv)) {
 		return
@@ -58,18 +62,21 @@ func init() {
 	// The grace period only needs to cover early launch failures, not full app
 	// readiness. 500ms is enough to catch immediate crashes while keeping the
 	// parent prompt responsive.
-	time.Sleep(detachedChildStartupGracePeriod)
-
-	var waitStatus syscall.WaitStatus
-	pid, err := syscall.Wait4(cmd.Process.Pid, &waitStatus, syscall.WNOHANG, nil)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "trackyou: detached launch status check failed (%v), retrying in foreground\n", err)
-		return
+	deadline := time.Now().Add(detachedChildStartupGracePeriod)
+	for {
+		var waitStatus syscall.WaitStatus
+		pid, err := syscall.Wait4(cmd.Process.Pid, &waitStatus, syscall.WNOHANG, nil)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "trackyou: detached launch status check failed (%v), retrying in foreground\n", err)
+			return
+		}
+		if pid == cmd.Process.Pid {
+			fmt.Fprintf(os.Stderr, "trackyou: detached launch exited early (status=%d), retrying in foreground\n", waitStatus)
+			return
+		}
+		if time.Now().After(deadline) {
+			os.Exit(0)
+		}
+		time.Sleep(detachedChildStartupPollInterval)
 	}
-	if pid == cmd.Process.Pid {
-		fmt.Fprintf(os.Stderr, "trackyou: detached launch exited early (status=%d), retrying in foreground\n", waitStatus)
-		return
-	}
-
-	os.Exit(0)
 }
