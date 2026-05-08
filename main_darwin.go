@@ -12,7 +12,12 @@ import (
 	"golang.org/x/term"
 )
 
+// detachedChildStartupGracePeriod is a short window to detect immediate child
+// launch failures before exiting the parent process.
 const detachedChildStartupGracePeriod = 500 * time.Millisecond
+
+// detachedChildStartupPollInterval balances early-failure detection latency
+// with low CPU wakeups while polling child process state.
 const detachedChildStartupPollInterval = 50 * time.Millisecond
 
 // init runs before main() and self-detaches the process when it is launched
@@ -35,10 +40,7 @@ const detachedChildStartupPollInterval = 50 * time.Millisecond
 // binary as a subprocess whose stdin is closed or redirected to a pipe/null,
 // so IsTerminal returns false and the self-detach is correctly skipped.
 func init() {
-	isInteractiveTTY := false
-	if os.Stdin != nil {
-		isInteractiveTTY = term.IsTerminal(int(os.Stdin.Fd()))
-	}
+	isInteractiveTTY := term.IsTerminal(int(os.Stdin.Fd()))
 
 	if !shouldDetachForInteractiveLaunch(isInteractiveTTY, os.Getenv(detachMarkerEnv)) {
 		return
@@ -54,6 +56,10 @@ func init() {
 	if err := cmd.Start(); err != nil {
 		// If re-exec fails for any reason, log and fall through to run normally.
 		fmt.Fprintf(os.Stderr, "trackyou: failed to detach from terminal: %v\n", err)
+		return
+	}
+	if cmd.Process == nil {
+		fmt.Fprintln(os.Stderr, "trackyou: detached launch failed to start child process, retrying in foreground")
 		return
 	}
 
