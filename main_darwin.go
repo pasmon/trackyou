@@ -7,28 +7,53 @@ import (
 	"os"
 	"os/exec"
 	"syscall"
+	"time"
+
+	"golang.org/x/term"
 )
 
+// detachedChildStartupGracePeriod is a short window to detect immediate child
+// launch failures before exiting the parent process.
+const detachedChildStartupGracePeriod = 500 * time.Millisecond
+
+// detachedChildStartupPollInterval balances early-failure detection latency
+// with low CPU wakeups while polling child process state.
+const detachedChildStartupPollInterval = 50 * time.Millisecond
+
+func formatWaitStatus(status syscall.WaitStatus) string {
+	if status.Exited() {
+		return fmt.Sprintf("exit code=%d", status.ExitStatus())
+	}
+	if status.Signaled() {
+		return fmt.Sprintf("signal=%s", status.Signal())
+	}
+	if status.Stopped() {
+		return fmt.Sprintf("stopped by signal=%s", status.StopSignal())
+	}
+	return fmt.Sprintf("status=%d", status)
+}
+
 // init runs before main() and self-detaches the process when it is launched
-// directly from a terminal (e.g. via `trackyou` in a shell after a Homebrew
-// install).  Without this, the shell blocks until the GUI is closed, which
-// feels wrong for a desktop application.
+// directly from an interactive terminal (e.g. via `trackyou` in a shell after
+// a Homebrew install).  Without this, the shell blocks until the GUI is
+// closed, which feels wrong for a desktop application.
 //
 // How it works:
-//  1. If a controlling terminal exists (/dev/tty opens) and the
-//     TRACKYOU_DETACHED marker is not set, re-exec the same binary in a new
-//     session with stdin/stdout/stderr disconnected and set TRACKYOU_DETACHED=1.
+//  1. If stdin is an interactive TTY and the TRACKYOU_DETACHED marker is not
+//     set, re-exec the same binary in a new session with stdin/stdout/stderr
+//     disconnected and set TRACKYOU_DETACHED=1.
 //  2. The parent shell sees the original process exit immediately (exit 0) and
 //     returns the prompt.
 //  3. The detached child process starts normally and opens the Fyne window.
 //     Because the marker is already set for the child, this init() is a no-op
 //     and it proceeds straight into main().
+//
+// Checking stdin (term.IsTerminal) rather than the controlling terminal
+// (/dev/tty) is intentional: automated tools such as `brew upgrade` invoke the
+// binary as a subprocess whose stdin is closed or redirected to a pipe/null,
+// so IsTerminal returns false and the self-detach is correctly skipped.
 func init() {
-	isInteractiveTTY := false
-	if tty, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0); err == nil {
-		isInteractiveTTY = true
-		defer tty.Close()
-	}
+	isInteractiveTTY := term.IsTerminal(int(os.Stdin.Fd()))
 
 	if !shouldDetachForInteractiveLaunch(isInteractiveTTY, os.Getenv(detachMarkerEnv)) {
 		return
@@ -46,6 +71,34 @@ func init() {
 		fmt.Fprintf(os.Stderr, "trackyou: failed to detach from terminal: %v\n", err)
 		return
 	}
+	if cmd.Process == nil {
+		fmt.Fprintln(os.Stderr, "trackyou: detached launch failed to start child process, retrying in foreground")
+		return
+	}
 
-	os.Exit(0)
+	// Guard against silent startup failures: if the detached child exits
+	// immediately, keep running in the current process so the app still opens.
+	// The grace period only needs to cover early launch failures, not full app
+	// readiness. 500ms is enough to catch immediate crashes while keeping the
+	// parent prompt responsive.
+	deadline := time.Now().Add(detachedChildStartupGracePeriod)
+	for {
+		var waitStatus syscall.WaitStatus
+		pid, err := syscall.Wait4(cmd.Process.Pid, &waitStatus, syscall.WNOHANG, nil)
+		if err != nil {
+			if err == syscall.EINTR {
+				continue
+			}
+			fmt.Fprintf(os.Stderr, "trackyou: detached launch status check failed (%v), retrying in foreground\n", err)
+			return
+		}
+		if pid == cmd.Process.Pid {
+			fmt.Fprintf(os.Stderr, "trackyou: detached launch exited early (%s), retrying in foreground\n", formatWaitStatus(waitStatus))
+			return
+		}
+		if time.Now().After(deadline) {
+			os.Exit(0)
+		}
+		time.Sleep(detachedChildStartupPollInterval)
+	}
 }
