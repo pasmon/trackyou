@@ -20,6 +20,19 @@ const detachedChildStartupGracePeriod = 500 * time.Millisecond
 // with low CPU wakeups while polling child process state.
 const detachedChildStartupPollInterval = 50 * time.Millisecond
 
+func formatWaitStatus(status syscall.WaitStatus) string {
+	if status.Exited() {
+		return fmt.Sprintf("exit code=%d", status.ExitStatus())
+	}
+	if status.Signaled() {
+		return fmt.Sprintf("signal=%s", status.Signal())
+	}
+	if status.Stopped() {
+		return fmt.Sprintf("stopped by signal=%s", status.StopSignal())
+	}
+	return fmt.Sprintf("status=%d", status)
+}
+
 // init runs before main() and self-detaches the process when it is launched
 // directly from an interactive terminal (e.g. via `trackyou` in a shell after
 // a Homebrew install).  Without this, the shell blocks until the GUI is
@@ -80,7 +93,7 @@ func init() {
 			return
 		}
 		if pid == cmd.Process.Pid {
-			fmt.Fprintf(os.Stderr, "trackyou: detached launch exited early (status=%d), retrying in foreground\n", waitStatus)
+			fmt.Fprintf(os.Stderr, "trackyou: detached launch exited early (%s), retrying in foreground\n", formatWaitStatus(waitStatus))
 			return
 		}
 		if time.Now().After(deadline) {
