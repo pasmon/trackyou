@@ -53,20 +53,11 @@ func init() {
 
 	// Guard against silent startup failures: if the detached child exits
 	// immediately, keep running in the current process so the app still opens.
-	exited := make(chan error, 1)
-	go func() {
-		exited <- cmd.Wait()
-	}()
-
-	select {
-	case err := <-exited:
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "trackyou: detached launch exited early (%v), retrying in foreground\n", err)
-		} else {
-			fmt.Fprintln(os.Stderr, "trackyou: detached launch exited early, retrying in foreground")
-		}
+	time.Sleep(500 * time.Millisecond)
+	if err := cmd.Process.Signal(syscall.Signal(0)); err != nil {
+		fmt.Fprintf(os.Stderr, "trackyou: detached launch exited early (%v), retrying in foreground\n", err)
 		return
-	case <-time.After(500 * time.Millisecond):
-		os.Exit(0)
 	}
+
+	os.Exit(0)
 }
