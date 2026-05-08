@@ -34,7 +34,7 @@ const detachedChildStartupGracePeriod = 500 * time.Millisecond
 // binary as a subprocess whose stdin is closed or redirected to a pipe/null,
 // so IsTerminal returns false and the self-detach is correctly skipped.
 func init() {
-	isInteractiveTTY := term.IsTerminal(int(os.Stdin.Fd()))
+	isInteractiveTTY := os.Stdin != nil && term.IsTerminal(int(os.Stdin.Fd()))
 
 	if !shouldDetachForInteractiveLaunch(isInteractiveTTY, os.Getenv(detachMarkerEnv)) {
 		return
@@ -58,17 +58,18 @@ func init() {
 	// The grace period only needs to cover early launch failures, not full app
 	// readiness. 500ms is enough to catch immediate crashes while keeping the
 	// parent prompt responsive.
-	waitResult := make(chan error, 1)
-	go func() {
-		waitResult <- cmd.Wait()
-	}()
+	time.Sleep(detachedChildStartupGracePeriod)
 
-	select {
-	case err := <-waitResult:
-		fmt.Fprintf(os.Stderr, "trackyou: detached launch exited early (%v), retrying in foreground\n", err)
+	var waitStatus syscall.WaitStatus
+	pid, err := syscall.Wait4(cmd.Process.Pid, &waitStatus, syscall.WNOHANG, nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "trackyou: detached launch status check failed (%v), retrying in foreground\n", err)
 		return
-	case <-time.After(detachedChildStartupGracePeriod):
-		_ = cmd.Process.Release()
-		os.Exit(0)
 	}
+	if pid == cmd.Process.Pid {
+		fmt.Fprintf(os.Stderr, "trackyou: detached launch exited early (status=%d), retrying in foreground\n", waitStatus)
+		return
+	}
+
+	os.Exit(0)
 }
