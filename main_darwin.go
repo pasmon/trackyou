@@ -73,6 +73,9 @@ func init() {
 		var waitStatus syscall.WaitStatus
 		pid, err := syscall.Wait4(cmd.Process.Pid, &waitStatus, syscall.WNOHANG, nil)
 		if err != nil {
+			if err == syscall.EINTR {
+				continue
+			}
 			fmt.Fprintf(os.Stderr, "trackyou: detached launch status check failed (%v), retrying in foreground\n", err)
 			return
 		}
