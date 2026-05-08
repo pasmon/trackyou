@@ -12,6 +12,8 @@ import (
 	"golang.org/x/term"
 )
 
+const detachedChildStartupGracePeriod = 500 * time.Millisecond
+
 // init runs before main() and self-detaches the process when it is launched
 // directly from an interactive terminal (e.g. via `trackyou` in a shell after
 // a Homebrew install).  Without this, the shell blocks until the GUI is
@@ -53,11 +55,20 @@ func init() {
 
 	// Guard against silent startup failures: if the detached child exits
 	// immediately, keep running in the current process so the app still opens.
-	time.Sleep(500 * time.Millisecond)
-	if err := cmd.Process.Signal(syscall.Signal(0)); err != nil {
+	// The grace period only needs to cover early launch failures, not full app
+	// readiness. 500ms is enough to catch immediate crashes while keeping the
+	// parent prompt responsive.
+	waitResult := make(chan error, 1)
+	go func() {
+		waitResult <- cmd.Wait()
+	}()
+
+	select {
+	case err := <-waitResult:
 		fmt.Fprintf(os.Stderr, "trackyou: detached launch exited early (%v), retrying in foreground\n", err)
 		return
+	case <-time.After(detachedChildStartupGracePeriod):
+		_ = cmd.Process.Release()
+		os.Exit(0)
 	}
-
-	os.Exit(0)
 }
