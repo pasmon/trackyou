@@ -925,8 +925,9 @@ func main() {
 		application.desk = desk
 		menu := fyne.NewMenu("TrackYou",
 			fyne.NewMenuItem("Show", func() {
-				window.Show()
-				window.RequestFocus()
+				fyne.Do(func() {
+					restoreMainWindow(window.Show, window.CenterOnScreen, window.RequestFocus)
+				})
 			}),
 			fyne.NewMenuItem("Quit", func() {
 				application.idleCancel()

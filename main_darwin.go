@@ -33,15 +33,13 @@ func formatWaitStatus(status syscall.WaitStatus) string {
 	return fmt.Sprintf("status=%d", status)
 }
 
-// init runs before main() and self-detaches the process when it is launched
-// directly from an interactive terminal (e.g. via `trackyou` in a shell after
-// a Homebrew install).  Without this, the shell blocks until the GUI is
-// closed, which feels wrong for a desktop application.
+// init runs before main() and can self-detach the process when it is launched
+// directly from an interactive terminal.
 //
 // How it works:
-//  1. If stdin is an interactive TTY and the TRACKYOU_DETACHED marker is not
-//     set, re-exec the same binary in a new session with stdin/stdout/stderr
-//     disconnected and set TRACKYOU_DETACHED=1.
+//  1. If stdin is an interactive TTY, TRACKYOU_DETACHED is not set, and
+//     TRACKYOU_AUTODETACH=1 is set, re-exec the same binary in a new session
+//     with stdin/stdout/stderr disconnected and set TRACKYOU_DETACHED=1.
 //  2. The parent shell sees the original process exit immediately (exit 0) and
 //     returns the prompt.
 //  3. The detached child process starts normally and opens the Fyne window.
@@ -55,7 +53,7 @@ func formatWaitStatus(status syscall.WaitStatus) string {
 func init() {
 	isInteractiveTTY := term.IsTerminal(int(os.Stdin.Fd()))
 
-	if !shouldDetachForInteractiveLaunch(isInteractiveTTY, os.Getenv(detachMarkerEnv)) {
+	if !shouldDetachForInteractiveLaunch(isInteractiveTTY, os.Getenv(detachMarkerEnv), os.Getenv(detachEnabledEnv)) {
 		return
 	}
 
