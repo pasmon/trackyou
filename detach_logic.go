@@ -3,7 +3,7 @@ package main
 const detachMarkerEnv = "TRACKYOU_DETACHED"
 const detachMarkerValue = "1"
 // detachEnabledEnv enables opt-in auto-detach for interactive terminal
-// launches when set to detachEnabledValue.
+// launches when set to "1".
 const detachEnabledEnv = "TRACKYOU_AUTODETACH"
 const detachEnabledValue = "1"
 
