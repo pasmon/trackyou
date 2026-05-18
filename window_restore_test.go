@@ -21,7 +21,7 @@ func TestRestoreMainWindow_CallOrder(t *testing.T) {
 	}
 }
 
-func TestRestoreMainWindow_AllowsNilCallbacks(t *testing.T) {
+func TestRestoreMainWindow_NilCallbacksSafe(t *testing.T) {
 	assertNoPanic := func(name string, fn func()) {
 		t.Helper()
 		t.Run(name, func(t *testing.T) {
