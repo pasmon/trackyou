@@ -103,18 +103,6 @@ type App struct {
 	weeklyCard       *widget.Card
 }
 
-func restoreMainWindow(show, center, focus func()) {
-	if show != nil {
-		show()
-	}
-	if center != nil {
-		center()
-	}
-	if focus != nil {
-		focus()
-	}
-}
-
 func (a *App) updateTaskGroups() {
 	a.taskGroups = models.GroupTasksByDate(a.tasks)
 	a.flatItems = models.FlattenTaskGroups(a.taskGroups)
