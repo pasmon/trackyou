@@ -22,8 +22,28 @@ func TestRestoreMainWindow_CallOrder(t *testing.T) {
 }
 
 func TestRestoreMainWindow_AllowsNilCallbacks(t *testing.T) {
-	restoreMainWindow(nil, nil, nil)
-	restoreMainWindow(func() {}, nil, nil)
-	restoreMainWindow(nil, func() {}, nil)
-	restoreMainWindow(nil, nil, func() {})
+	assertNoPanic := func(name string, fn func()) {
+		t.Helper()
+		t.Run(name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("expected no panic, got %v", r)
+				}
+			}()
+			fn()
+		})
+	}
+
+	assertNoPanic("all nil", func() {
+		restoreMainWindow(nil, nil, nil)
+	})
+	assertNoPanic("only show", func() {
+		restoreMainWindow(func() {}, nil, nil)
+	})
+	assertNoPanic("only center", func() {
+		restoreMainWindow(nil, func() {}, nil)
+	})
+	assertNoPanic("only focus", func() {
+		restoreMainWindow(nil, nil, func() {})
+	})
 }
