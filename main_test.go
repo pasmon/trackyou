@@ -719,3 +719,115 @@ func TestResolveTaskEditEndTime(t *testing.T) {
 		}
 	})
 }
+
+func TestIntegration_StartTask_PersistsInProgress(t *testing.T) {
+	app, cleanup := setupTestApp(t)
+	defer cleanup()
+
+	app.projectEntry.SetText("InProgress Project")
+	app.descriptionEntry.SetText("desc")
+	test.Tap(app.startButton)
+
+	if app.currentTask == nil {
+		t.Fatal("expected currentTask after start")
+	}
+	if app.currentTask.ID == 0 {
+		t.Error("expected non-zero task ID after start (task should be persisted immediately)")
+	}
+
+	got, err := app.db.GetInProgressTask()
+	if err != nil {
+		t.Fatalf("GetInProgressTask failed: %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected in-progress record in DB after start")
+	}
+	if got.ProjectName != "InProgress Project" {
+		t.Errorf("expected ProjectName %q, got %q", "InProgress Project", got.ProjectName)
+	}
+}
+
+func TestIntegration_StopTask_FinalizesInProgress(t *testing.T) {
+	app, cleanup := setupTestApp(t)
+	defer cleanup()
+
+	app.projectEntry.SetText("Finalize Project")
+	app.descriptionEntry.SetText("desc")
+	test.Tap(app.startButton)
+
+	time.Sleep(50 * time.Millisecond)
+
+	test.Tap(app.stopButton)
+
+	// No in-progress record should remain.
+	got, err := app.db.GetInProgressTask()
+	if err != nil {
+		t.Fatalf("GetInProgressTask failed: %v", err)
+	}
+	if got != nil {
+		t.Error("expected no in-progress record after stop")
+	}
+
+	// The task should appear in completed tasks.
+	tasks, err := app.db.GetTasks()
+	if err != nil {
+		t.Fatalf("GetTasks failed: %v", err)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("expected 1 completed task, got %d", len(tasks))
+	}
+	if tasks[0].Duration == 0 {
+		t.Error("expected non-zero Duration for completed task")
+	}
+}
+
+func TestIntegration_RecoverInProgressTask(t *testing.T) {
+	app, cleanup := setupTestApp(t)
+	defer cleanup()
+
+	// Simulate a crash: write an in-progress record directly to the DB.
+	startTime := time.Now().Add(-10 * time.Minute).Round(0)
+	stale := &models.Task{
+		ProjectName: "Crashed Project",
+		Description: "crash desc",
+		StartTime:   startTime,
+	}
+	if err := app.db.StartInProgressTask(stale); err != nil {
+		t.Fatalf("StartInProgressTask failed: %v", err)
+	}
+
+	// Simulate app startup recovery.
+	app.recoverInProgressTask()
+
+	if app.currentTask == nil {
+		t.Fatal("expected currentTask after recovery")
+	}
+	if app.currentTask.ProjectName != "Crashed Project" {
+		t.Errorf("expected ProjectName %q, got %q", "Crashed Project", app.currentTask.ProjectName)
+	}
+	if app.currentTask.ID != stale.ID {
+		t.Errorf("expected ID %d, got %d", stale.ID, app.currentTask.ID)
+	}
+	// The recovered task start time should be the original, so elapsed time is meaningful.
+	if !app.currentTask.StartTime.Round(time.Second).Equal(startTime.Round(time.Second)) {
+		t.Errorf("expected StartTime %v, got %v", startTime, app.currentTask.StartTime)
+	}
+	if app.startButton.Disabled() == false {
+		t.Error("start button should be disabled while task is running")
+	}
+	if app.stopButton.Disabled() {
+		t.Error("stop button should be enabled while task is running")
+	}
+}
+
+func TestIntegration_RecoverInProgressTask_NoOp(t *testing.T) {
+	app, cleanup := setupTestApp(t)
+	defer cleanup()
+
+	// With no in-progress record, recovery should be a no-op.
+	app.recoverInProgressTask()
+
+	if app.currentTask != nil {
+		t.Error("expected no currentTask when no in-progress record exists")
+	}
+}
