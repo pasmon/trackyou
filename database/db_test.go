@@ -313,3 +313,225 @@ func TestDB_GetProjectNames(t *testing.T) {
 		t.Fatalf("unexpected project names order: %v", projectNames)
 	}
 }
+
+func TestDB_InProgressTask_StartAndGet(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	task := models.NewTask("In-Progress Project", "desc")
+	if err := db.StartInProgressTask(task); err != nil {
+		t.Fatalf("StartInProgressTask failed: %v", err)
+	}
+	if task.ID == 0 {
+		t.Fatal("expected non-zero ID after StartInProgressTask")
+	}
+
+	got, err := db.GetInProgressTask()
+	if err != nil {
+		t.Fatalf("GetInProgressTask failed: %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected in-progress task, got nil")
+	}
+	if got.ProjectName != "In-Progress Project" {
+		t.Errorf("expected ProjectName %q, got %q", "In-Progress Project", got.ProjectName)
+	}
+	if got.ID != task.ID {
+		t.Errorf("expected ID %d, got %d", task.ID, got.ID)
+	}
+}
+
+func TestDB_InProgressTask_NotReturnedByGetTasks(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	task := models.NewTask("Running", "desc")
+	if err := db.StartInProgressTask(task); err != nil {
+		t.Fatalf("StartInProgressTask failed: %v", err)
+	}
+
+	tasks, err := db.GetTasks()
+	if err != nil {
+		t.Fatalf("GetTasks failed: %v", err)
+	}
+	if len(tasks) != 0 {
+		t.Errorf("expected GetTasks to exclude in-progress tasks, got %d tasks", len(tasks))
+	}
+}
+
+func TestDB_InProgressTask_Checkpoint(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	task := models.NewTask("Checkpoint Project", "desc")
+	if err := db.StartInProgressTask(task); err != nil {
+		t.Fatalf("StartInProgressTask failed: %v", err)
+	}
+
+	task.Duration = 5 * time.Minute
+	if err := db.CheckpointInProgressTask(task); err != nil {
+		t.Fatalf("CheckpointInProgressTask failed: %v", err)
+	}
+
+	got, err := db.GetInProgressTask()
+	if err != nil {
+		t.Fatalf("GetInProgressTask failed: %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected in-progress task after checkpoint")
+	}
+	if got.Duration != 5*time.Minute {
+		t.Errorf("expected Duration 5m, got %v", got.Duration)
+	}
+}
+
+func TestDB_InProgressTask_Finish(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	task := models.NewTask("Finish Project", "desc")
+	if err := db.StartInProgressTask(task); err != nil {
+		t.Fatalf("StartInProgressTask failed: %v", err)
+	}
+
+	task.StopTask()
+	if err := db.FinishInProgressTask(task); err != nil {
+		t.Fatalf("FinishInProgressTask failed: %v", err)
+	}
+
+	// Should no longer be in-progress.
+	got, err := db.GetInProgressTask()
+	if err != nil {
+		t.Fatalf("GetInProgressTask failed: %v", err)
+	}
+	if got != nil {
+		t.Error("expected no in-progress task after finish, got one")
+	}
+
+	// Should now appear in GetTasks.
+	tasks, err := db.GetTasks()
+	if err != nil {
+		t.Fatalf("GetTasks failed: %v", err)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("expected 1 task after finish, got %d", len(tasks))
+	}
+	if tasks[0].Duration == 0 {
+		t.Error("expected non-zero Duration after finish")
+	}
+}
+
+func TestDB_InProgressTask_Abandon(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	task := models.NewTask("Abandon Project", "desc")
+	if err := db.StartInProgressTask(task); err != nil {
+		t.Fatalf("StartInProgressTask failed: %v", err)
+	}
+
+	if err := db.AbandonInProgressTask(task.ID); err != nil {
+		t.Fatalf("AbandonInProgressTask failed: %v", err)
+	}
+
+	got, err := db.GetInProgressTask()
+	if err != nil {
+		t.Fatalf("GetInProgressTask failed: %v", err)
+	}
+	if got != nil {
+		t.Error("expected no in-progress task after abandon, got one")
+	}
+}
+
+func TestDB_GetInProgressTask_NoneReturnsNil(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	got, err := db.GetInProgressTask()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != nil {
+		t.Error("expected nil when no in-progress task exists")
+	}
+}
+
+func TestDB_MigrateAddInProgress_IdempotentOnFreshDB(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	// Calling InitDB again should not fail (migration is idempotent).
+	if err := db.InitDB(); err != nil {
+		t.Fatalf("second InitDB failed: %v", err)
+	}
+}
+
+func TestDB_MigrateAddInProgress_OldSchema(t *testing.T) {
+	dbPath := "test_migrate.db"
+	rawDB, err := NewDB(dbPath)
+	if err != nil {
+		t.Fatalf("NewDB failed: %v", err)
+	}
+	defer func() {
+		rawDB.Close()
+		os.Remove(dbPath)
+	}()
+
+	// Create the old schema without in_progress.
+	_, err = rawDB.Exec(`CREATE TABLE IF NOT EXISTS tasks (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		project_name TEXT NOT NULL,
+		description TEXT,
+		start_time DATETIME NOT NULL,
+		end_time DATETIME NOT NULL,
+		duration INTEGER NOT NULL
+	)`)
+	if err != nil {
+		t.Fatalf("failed to create legacy schema: %v", err)
+	}
+
+	// InitDB should add the column without error.
+	if err := rawDB.InitDB(); err != nil {
+		t.Fatalf("InitDB migration failed: %v", err)
+	}
+
+	// The in-progress methods should now work correctly.
+	task := models.NewTask("Legacy Project", "desc")
+	if err := rawDB.StartInProgressTask(task); err != nil {
+		t.Fatalf("StartInProgressTask after migration failed: %v", err)
+	}
+	got, err := rawDB.GetInProgressTask()
+	if err != nil {
+		t.Fatalf("GetInProgressTask after migration failed: %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected in-progress task after migration, got nil")
+	}
+}
+
+func TestDB_GetProjectNames_ExcludesInProgress(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	completed := models.NewTask("Completed", "done")
+	completed.StopTask()
+	if err := db.SaveTask(completed); err != nil {
+		t.Fatalf("SaveTask failed: %v", err)
+	}
+
+	inProgress := models.NewTask("Running", "wip")
+	if err := db.StartInProgressTask(inProgress); err != nil {
+		t.Fatalf("StartInProgressTask failed: %v", err)
+	}
+
+	names, err := db.GetProjectNames()
+	if err != nil {
+		t.Fatalf("GetProjectNames failed: %v", err)
+	}
+	if len(names) != 1 {
+		t.Fatalf("expected 1 project name (excluding in-progress), got %d: %v", len(names), names)
+	}
+	if names[0] != "Completed" {
+		t.Errorf("expected Completed, got %q", names[0])
+	}
+}

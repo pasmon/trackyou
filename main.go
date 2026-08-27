@@ -95,6 +95,7 @@ type App struct {
 	timerLabel       *widget.Label
 	totalLabel       *widget.Label
 	timerStop        chan struct{}
+	timerStopOnce    sync.Once
 	projectEntry     *widget.SelectEntry
 	descriptionEntry *widget.Entry
 	startButton      *widget.Button
@@ -324,6 +325,17 @@ func (a *App) startTask(projectName, description string) {
 	a.idleSince = time.Time{}
 	a.mu.Unlock()
 
+	// Persist immediately so a crash doesn't lose the start time.
+	if err := a.db.StartInProgressTask(a.currentTask); err != nil {
+		a.showDialogError(err)
+		// Roll back: clear currentTask so the UI stays consistent.
+		a.mu.Lock()
+		a.currentTask = nil
+		a.idleSince = time.Now().Round(0)
+		a.mu.Unlock()
+		return
+	}
+
 	a.updateButtonsState(true)
 	a.timerLabel.SetText("Starting...")
 
@@ -335,7 +347,12 @@ func (a *App) startTask(projectName, description string) {
 		a.recordingIcon.Show()
 	}
 
+	// Fresh stop channel for this task's goroutines.
+	a.timerStop = make(chan struct{})
+	a.timerStopOnce = sync.Once{}
+
 	go a.updateTimer()
+	go a.checkpointCurrentTask()
 }
 
 func (a *App) stopTask() {
@@ -351,8 +368,18 @@ func (a *App) stopTask() {
 	a.idleSince = time.Now().Round(0)
 	a.mu.Unlock()
 
-	if err := a.db.SaveTask(task); err != nil {
-		a.showDialogError(err)
+	// Finalise the persisted record.  Tasks started via startTask already have
+	// an ID from StartInProgressTask; use FinishInProgressTask to atomically
+	// clear the flag.  For tasks recovered from a previous crash (ID already
+	// set) the same path applies.
+	var saveErr error
+	if task.ID != 0 {
+		saveErr = a.db.FinishInProgressTask(task)
+	} else {
+		saveErr = a.db.SaveTask(task)
+	}
+	if saveErr != nil {
+		a.showDialogError(saveErr)
 		return
 	}
 
@@ -376,10 +403,9 @@ func (a *App) stopTask() {
 	}
 	a.refreshWeeklyChart()
 
-	select {
-	case a.timerStop <- struct{}{}:
-	default:
-	}
+	// Close the stop channel once to broadcast to all per-task goroutines
+	// (updateTimer and checkpointCurrentTask).
+	a.timerStopOnce.Do(func() { close(a.timerStop) })
 
 	if a.timerLabel != nil {
 		a.timerLabel.SetText("Ready")
@@ -462,6 +488,38 @@ func (a *App) monitorMidnightRollover(ctx context.Context) {
 	}
 }
 
+// checkpointCurrentTask periodically saves the running task's elapsed duration
+// to the database. This limits data loss if the process is killed unexpectedly.
+// The goroutine exits when the task stop channel is closed.
+func (a *App) checkpointCurrentTask() {
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			a.mu.RLock()
+			task := a.currentTask
+			a.mu.RUnlock()
+
+			if task == nil {
+				return
+			}
+
+			// Build a lightweight snapshot to avoid mutating the shared task.
+			snapshot := &models.Task{
+				ID:       task.ID,
+				Duration: time.Since(task.StartTime),
+			}
+			if err := a.db.CheckpointInProgressTask(snapshot); err != nil {
+				fmt.Fprintf(os.Stderr, "checkpoint failed: %v\n", err)
+			}
+		case <-a.timerStop:
+			return
+		}
+	}
+}
+
 func (a *App) updateButtonsState(running bool) {
 	if a.startButton == nil || a.stopButton == nil || a.projectEntry == nil || a.descriptionEntry == nil {
 		return
@@ -481,6 +539,49 @@ func (a *App) updateButtonsState(running bool) {
 
 func (a *App) continueTask(task *models.Task) {
 	a.startTask(task.ProjectName, task.Description)
+}
+
+// recoverInProgressTask checks the database for an in-progress task that was
+// left running when the app last exited, and resumes it automatically. The task
+// keeps its original start time so elapsed time is correct.
+func (a *App) recoverInProgressTask() {
+	task, err := a.db.GetInProgressTask()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to check for in-progress task: %v\n", err)
+		return
+	}
+	if task == nil {
+		return
+	}
+
+	a.mu.Lock()
+	a.currentTask = task
+	a.idleSince = time.Time{}
+	a.mu.Unlock()
+
+	// Sync input fields
+	if a.projectEntry != nil {
+		a.projectEntry.SetText(task.ProjectName)
+	}
+	if a.descriptionEntry != nil {
+		a.descriptionEntry.SetText(task.Description)
+	}
+
+	a.updateButtonsState(true)
+
+	if a.timerLabel != nil {
+		a.timerLabel.SetText("Resuming...")
+	}
+	if a.recordingIcon != nil {
+		a.recordingIcon.Show()
+	}
+
+	// Create a fresh stop channel before launching goroutines.
+	a.timerStop = make(chan struct{})
+	a.timerStopOnce = sync.Once{}
+
+	go a.updateTimer()
+	go a.checkpointCurrentTask()
 }
 
 // editTask updates a completed task's fields, persists the change, and refreshes all UI state.
@@ -920,6 +1021,10 @@ func main() {
 		idleCancel:    idleCancel,
 	}
 
+	// Register macOS screen-wake / session-active lifecycle handlers so that
+	// the window is automatically restored after a screen lock/unlock.
+	registerLifecycleHandlers(window)
+
 	// Set up tray icon if supported
 	if desk, ok := myApp.(desktop.App); ok {
 		application.desk = desk
@@ -962,6 +1067,9 @@ func main() {
 	application.updateTaskGroups()
 	application.mu.Unlock()
 	application.refreshProjectSuggestions()
+
+	// Recover any task that was in-progress when the app last exited.
+	application.recoverInProgressTask()
 
 	// Initial goal check and UI update
 	application.updateSummaryUI(true)

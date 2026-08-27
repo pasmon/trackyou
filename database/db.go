@@ -56,7 +56,8 @@ func (db *DB) InitDB() error {
 			description TEXT,
 			start_time DATETIME NOT NULL,
 			end_time DATETIME NOT NULL,
-			duration INTEGER NOT NULL
+			duration INTEGER NOT NULL,
+			in_progress INTEGER NOT NULL DEFAULT 0
 		);`,
 		`CREATE TABLE IF NOT EXISTS preferences (
 			key TEXT PRIMARY KEY,
@@ -68,6 +69,11 @@ func (db *DB) InitDB() error {
 		if _, err := db.Exec(query); err != nil {
 			return err
 		}
+	}
+
+	// Migrate existing databases: add in_progress column if absent.
+	if err := db.migrateAddInProgress(); err != nil {
+		return err
 	}
 
 	// Set default theme if not exists
@@ -93,6 +99,122 @@ func (db *DB) InitDB() error {
 		INSERT OR IGNORE INTO preferences (key, value) 
 		VALUES ('workday_length', '8.0')
 	`)
+	return err
+}
+
+// migrateAddInProgress adds the in_progress column to the tasks table if it
+// does not already exist. This handles databases created before the column was
+// introduced.
+func (db *DB) migrateAddInProgress() error {
+	// PRAGMA table_info returns one row per column; we check for in_progress.
+	rows, err := db.Query(`PRAGMA table_info(tasks)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name, colType string
+		var notNull int
+		var dfltValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &dfltValue, &pk); err != nil {
+			return err
+		}
+		if name == "in_progress" {
+			return nil // column already present
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	_, err = db.Exec(`ALTER TABLE tasks ADD COLUMN in_progress INTEGER NOT NULL DEFAULT 0`)
+	return err
+}
+
+// StartInProgressTask inserts a new task with in_progress=1 and returns the
+// assigned database ID. The task's ID field is updated in place.
+func (db *DB) StartInProgressTask(task *models.Task) error {
+	query := `
+	INSERT INTO tasks (project_name, description, start_time, end_time, duration, in_progress)
+	VALUES (?, ?, ?, ?, ?, 1)`
+
+	result, err := db.Exec(query,
+		task.ProjectName,
+		task.Description,
+		task.StartTime,
+		task.StartTime, // end_time = start_time initially
+		int64(0),
+	)
+	if err != nil {
+		return err
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return err
+	}
+	task.ID = id
+	return nil
+}
+
+// CheckpointInProgressTask updates the duration of a running task in the
+// database without changing its in_progress flag.
+func (db *DB) CheckpointInProgressTask(task *models.Task) error {
+	query := `UPDATE tasks SET duration = ? WHERE id = ? AND in_progress = 1`
+	_, err := db.Exec(query, task.Duration.Nanoseconds(), task.ID)
+	return err
+}
+
+// FinishInProgressTask sets the final end_time and duration, and clears the
+// in_progress flag in one atomic update.
+func (db *DB) FinishInProgressTask(task *models.Task) error {
+	query := `
+	UPDATE tasks
+	SET end_time = ?, duration = ?, in_progress = 0
+	WHERE id = ? AND in_progress = 1`
+	_, err := db.Exec(query,
+		task.EndTime,
+		task.Duration.Nanoseconds(),
+		task.ID,
+	)
+	return err
+}
+
+// GetInProgressTask returns the single task whose in_progress flag is set, or
+// nil if none exists. An error is returned only for actual database failures.
+func (db *DB) GetInProgressTask() (*models.Task, error) {
+	query := `
+	SELECT id, project_name, description, start_time, end_time, duration
+	FROM tasks
+	WHERE in_progress = 1
+	LIMIT 1`
+
+	task := &models.Task{}
+	var duration int64
+	err := db.QueryRow(query).Scan(
+		&task.ID,
+		&task.ProjectName,
+		&task.Description,
+		&task.StartTime,
+		&task.EndTime,
+		&duration,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	task.Duration = time.Duration(duration)
+	return task, nil
+}
+
+// AbandonInProgressTask clears the in_progress flag for a stale in-progress
+// task without finalising it, discarding the partial record.
+func (db *DB) AbandonInProgressTask(id int64) error {
+	_, err := db.Exec(`UPDATE tasks SET in_progress = 0 WHERE id = ? AND in_progress = 1`, id)
 	return err
 }
 
@@ -140,9 +262,9 @@ func (db *DB) SaveTask(task *models.Task) error {
 	return err
 }
 
-// GetTasks retrieves all tasks from the database
+// GetTasks retrieves all completed tasks from the database (in_progress=0).
 func (db *DB) GetTasks() ([]*models.Task, error) {
-	query := `SELECT id, project_name, description, start_time, end_time, duration FROM tasks`
+	query := `SELECT id, project_name, description, start_time, end_time, duration FROM tasks WHERE in_progress = 0`
 	rows, err := db.Query(query)
 	if err != nil {
 		return nil, err
@@ -175,7 +297,7 @@ func (db *DB) GetProjectNames() ([]string, error) {
 	query := `
 	SELECT project_name
 	FROM tasks
-	WHERE project_name IS NOT NULL AND project_name <> ''
+	WHERE project_name IS NOT NULL AND project_name <> '' AND in_progress = 0
 	GROUP BY project_name
 	ORDER BY MAX(end_time) DESC`
 
