@@ -174,12 +174,22 @@ func (db *DB) FinishInProgressTask(task *models.Task) error {
 	UPDATE tasks
 	SET end_time = ?, duration = ?, in_progress = 0
 	WHERE id = ? AND in_progress = 1`
-	_, err := db.Exec(query,
+	result, err := db.Exec(query,
 		task.EndTime,
 		task.Duration.Nanoseconds(),
 		task.ID,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return fmt.Errorf("FinishInProgressTask: no in-progress row found for task id %d", task.ID)
+	}
+	return nil
 }
 
 // GetInProgressTask returns the single task whose in_progress flag is set, or
@@ -189,6 +199,7 @@ func (db *DB) GetInProgressTask() (*models.Task, error) {
 	SELECT id, project_name, description, start_time, end_time, duration
 	FROM tasks
 	WHERE in_progress = 1
+	ORDER BY start_time DESC
 	LIMIT 1`
 
 	task := &models.Task{}

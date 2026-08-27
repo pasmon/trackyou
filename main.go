@@ -379,6 +379,11 @@ func (a *App) stopTask() {
 		saveErr = a.db.SaveTask(task)
 	}
 	if saveErr != nil {
+		// Restore currentTask so the user can retry and timer goroutines
+		// remain consistent.
+		a.mu.Lock()
+		a.currentTask = task
+		a.mu.Unlock()
 		a.showDialogError(saveErr)
 		return
 	}
