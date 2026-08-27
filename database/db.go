@@ -211,10 +211,10 @@ func (db *DB) GetInProgressTask() (*models.Task, error) {
 	return task, nil
 }
 
-// AbandonInProgressTask clears the in_progress flag for a stale in-progress
-// task without finalising it, discarding the partial record.
+// AbandonInProgressTask deletes a stale in-progress task record entirely,
+// preventing it from appearing as a zero-duration completed task.
 func (db *DB) AbandonInProgressTask(id int64) error {
-	_, err := db.Exec(`UPDATE tasks SET in_progress = 0 WHERE id = ? AND in_progress = 1`, id)
+	_, err := db.Exec(`DELETE FROM tasks WHERE id = ? AND in_progress = 1`, id)
 	return err
 }
 

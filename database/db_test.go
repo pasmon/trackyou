@@ -441,6 +441,16 @@ func TestDB_InProgressTask_Abandon(t *testing.T) {
 	if got != nil {
 		t.Error("expected no in-progress task after abandon, got one")
 	}
+
+	// The row must be deleted entirely, not just flag-cleared, so it does not
+	// appear as a zero-duration completed task.
+	tasks, err := db.GetTasks()
+	if err != nil {
+		t.Fatalf("GetTasks failed: %v", err)
+	}
+	if len(tasks) != 0 {
+		t.Errorf("expected no tasks after abandon, got %d (abandoned record must be deleted)", len(tasks))
+	}
 }
 
 func TestDB_GetInProgressTask_NoneReturnsNil(t *testing.T) {

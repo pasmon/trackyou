@@ -54,18 +54,23 @@ static void TrackYouRegisterLifecycleHandlers(void) {
 import "C"
 
 import (
+	"sync"
+
 	"fyne.io/fyne/v2"
 )
 
-// lifecycleRestoreFunc holds the window-restore callback set by
-// registerLifecycleHandlers. It is called from Objective-C on the main thread
-// whenever the screen wakes or the user session becomes active.
-var lifecycleRestoreFunc func()
+var (
+	lifecycleMu          sync.Mutex
+	lifecycleRestoreFunc func()
+)
 
 //export windowRestoreCallback
 func windowRestoreCallback() {
-	if lifecycleRestoreFunc != nil {
-		fyne.Do(lifecycleRestoreFunc)
+	lifecycleMu.Lock()
+	fn := lifecycleRestoreFunc
+	lifecycleMu.Unlock()
+	if fn != nil {
+		fyne.Do(fn)
 	}
 }
 
@@ -73,8 +78,10 @@ func windowRestoreCallback() {
 // the main window is automatically restored after a screen lock/unlock or a
 // fast-user-switch event.
 func registerLifecycleHandlers(window fyne.Window) {
+	lifecycleMu.Lock()
 	lifecycleRestoreFunc = func() {
 		restoreMainWindow(window.Show, window.CenterOnScreen, window.RequestFocus)
 	}
+	lifecycleMu.Unlock()
 	C.TrackYouRegisterLifecycleHandlers()
 }
