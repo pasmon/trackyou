@@ -78,3 +78,20 @@ jobs:
         with:
           name: binaries
           path: trackyou-* 
+
+  build-macos:
+    name: Build macOS (${{ matrix.arch }})
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: stable
+
+      - name: Build for macOS
+        run: GOARCH=${{ matrix.arch }} CGO_ENABLED=1 go build -o trackyou-darwin-${{ matrix.arch }}
