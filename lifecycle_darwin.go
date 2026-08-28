@@ -10,8 +10,8 @@ package main
 
 void TrackYouRegisterLifecycleHandlers(void);
 
-// windowRestoreCallback is the Go-side function registered via
-// RegisterLifecycleCallbackFunc.
+// registerLifecycleHandlers stores lifecycleRestoreFunc; the Objective-C
+// notifications call windowRestoreCallback, which invokes the stored Go func.
 extern void windowRestoreCallback(void);
 */
 import "C"
