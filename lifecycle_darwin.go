@@ -18,7 +18,7 @@ package main
 
 // windowRestoreCallback is the Go-side function registered via
 // RegisterLifecycleCallbackFunc.
-static void windowRestoreCallback(void);
+extern void windowRestoreCallback(void);
 
 @implementation TrackYouLifecycleHandler
 - (void)handleScreensDidWake:(NSNotification *)note {
