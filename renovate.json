@@ -2,5 +2,13 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:recommended"
+  ],
+  "packageRules": [
+    {
+      "description": "go-sqlite3 v2.0.x tags were published by mistake and are retracted (they bundle SQLite 3.31.1 from 2020); stay on v1.",
+      "matchDatasources": ["go"],
+      "matchPackageNames": ["github.com/mattn/go-sqlite3"],
+      "allowedVersions": "<2.0.0"
+    }
   ]
 }
